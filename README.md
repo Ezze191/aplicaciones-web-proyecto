@@ -41,6 +41,7 @@
 4. [Requisitos del Sistema](#4-requisitos-del-sistema)
    - [4.1 Requisitos Funcionales (RF)](#41-requisitos-funcionales-rf)
    - [4.2 Requisitos No Funcionales (RNF)](#42-requisitos-no-funcionales-rnf)
+   - [4.3 Diagrama General de Casos de Uso del Sistema](#43-diagrama-general-de-casos-de-uso-del-sistema)
 5. [Análisis de Riesgos](#5-análisis-de-riesgos)
 6. [Metodología y Roles del Equipo](#6-metodología-y-roles-del-equipo)
    - [6.1 Justificación Metodológica (Scrum Adaptado)](#61-justificación-de-la-metodología-ágil-scrum-adaptado)
@@ -55,6 +56,9 @@
    - [9.5 CODEOWNERS y Definición de Hecho (DoD)](#95-gestión-de-pull-requests-codeowners-y-definición-de-hecho-dod)
    - [9.6 Versionado Semántico](#96-versionado-semántico-semantic-versioning)
 10. [Elección de Estructura Web y Tecnologías](#10-elección-de-estructura-web-y-tecnologías)
+   - [10.1 Diagrama de Arquitectura del Sistema](#101-diagrama-de-arquitectura-del-sistema)
+   - [10.2 Comparativa y Justificación del Stack Tecnológico](#102-comparativa-y-justificación-del-stack-tecnológico)
+   - [10.3 Arquitectura y Modelo de Base de Datos Relacional / Espacial (PostGIS)](#103-arquitectura-y-modelo-de-base-de-datos-relacional--espacial-postgresql--postgis)
 11. [Selección y Justificación de Patrones de Diseño](#11-selección-y-justificación-de-patrones-de-diseño)
 12. [Wireframes y Arquitectura de Información](#12-wireframes-y-arquitectura-de-información)
 13. [Búsquedas en el Sitio Web y Filtros Avanzados](#13-búsquedas-en-el-sitio-web-y-filtros-avanzados)
@@ -178,6 +182,26 @@ Los usuarios administradores cuentan con un módulo específico para el alta de 
 | **RNF-04** | **Precisión y Eficiencia Geoespacial** | El motor espacial PostGIS ejecutará consultas de proximidad e índices GiST para resolver la desduplicación geográfica y validación de límites territoriales en menos de 100 ms. |
 | **RNF-05** | **Usabilidad y Accesibilidad (WCAG)** | La interfaz web responderá al enfoque Mobile-First y cumplirá el estándar WCAG 2.1 Nivel AA, asegurando relaciones de contraste adecuadas y facilidad de uso en pantallas táctiles. |
 | **RNF-06** | **Compatibilidad Multiplataforma** | La plataforma PWA ofrecerá un funcionamiento uniforme en navegadores web modernos (Chrome, Safari, Firefox, Edge) tanto en dispositivos móviles (Android, iOS) como de escritorio. |
+
+### 4.3 Diagrama General de Casos de Uso del Sistema
+
+A continuación se presenta el modelado funcional de casos de uso del **Sistema de Incidencias Urbanas (S.I.U.)**, estructurado en torno a los tres actores primarios de la plataforma:
+
+<p align="center">
+  <img src="docs/diagrama_casos_de_uso.png" alt="Diagrama de Casos de Uso - Plataforma Municipal de Reportes" width="100%" />
+</p>
+
+#### Matriz de Casos de Uso por Actor
+
+| Actor | Caso de Uso | Descripción Funcional | Interfaz / Canal |
+| :--- | :--- | :--- | :--- |
+| **Ciudadano** | **CU1: Registrar Reporte Asistido** | Captura asistida de anomalía urbana con foto en tiempo real, geolocalización satelital asistida en mapa y categorización por dependencia. | PWA Móvil / Desktop |
+| **Ciudadano** | **CU2: Confirmar Incidencia / Upvote** | Validación comunitaria de reportes activos cercanos ("Sigue ahí"), incrementando la prioridad dinámica del ticket sin duplicar folios. | PWA Móvil / Mapa |
+| **Ciudadano** | **CU3: Rastrear Folio** | Consulta pública e instantánea de la trazabilidad y estado de resolución mediante folio alfanumérico institucional (sin login obligatorio). | Portal Público Web |
+| **Funcionario / Supervisor** | **CU4: Evaluar y Canalizar Reporte** | Recepción de incidencias en cola de delegación (SIMAS, CFE, Obras Públicas), revisión de evidencias fotográficas y validación técnica. | Panel Backoffice Web |
+| **Funcionario / Supervisor** | **CU5: Asignar Orden de Trabajo** | Creación y despacho de orden de trabajo vinculada a una cuadrilla operativa activa en turno dentro del sector. | Tablero Kanban / Backoffice |
+| **Cuadrilla de Campo** | **CU6: Registrar Cierre Técnico con Foto** | Conclusión del trabajo en sitio mediante validación GPS perimetral y carga obligatoria de fotografía en vivo del "después" (bloqueo de galería). | PWA Operativa de Campo |
+| **Funcionario / Supervisor** | **CU7: Consultar Dashboard** | Supervisión ejecutiva en tiempo real con indicadores SLA, mapas de calor geoespaciales y tasa de desduplicación. | Dashboard BI Ejecutivo |
 
 ---
 
@@ -315,11 +339,11 @@ Toda rama secundaria debe crearse obligatoriamente a partir de la versión actua
 | **Fix (Corrección)** | `fix/T-x.y-descripcion` | Solución de errores o ajustes derivados de pruebas durante el sprint. | `fix/T-3.3-gps-accuracy-pwa` |
 | **Hotfix (Urgente)** | `hotfix/descripcion` | Corrección crítica e inmediata que debe aplicarse directamente sobre producción. | `hotfix/resend-api-key-rotation` |
 
-#### 9.2.2 Convención de Mensajes de Commit (Conventional Commits)
+#### 9.2.2 Convención de Mensajes de Commit (*Conventional Commits*)
 
-Para mantener un historial navegable y permitir la generación automatizada del registro de cambios (*Changelog*) por sprint en la plataforma S.I.U., los commits deben estructurarse bajo la especificación **Conventional Commits**:
+Para mantener un historial navegable y permitir la generación automatizada del registro de cambios (*Changelog*) por sprint en la plataforma **S.I.U.**, los commits deben estructurarse bajo la especificación **Conventional Commits**:
 
-$$\text{formato: } \texttt{<tipo>(<alcance>): <descripción corta> (ID\_Tarea)}$$
+> `Formato: <tipo>(<alcance>): <descripción corta> (ID_Tarea)`
 
 * **Tipos Permitidos:**
   * `feat`: Nueva funcionalidad.
@@ -331,10 +355,8 @@ $$\text{formato: } \texttt{<tipo>(<alcance>): <descripción corta> (ID\_Tarea)}$
 * **Ejemplo Real:**
   ```text
   feat(api): agrupa reportes a 50 m con ST_DWithin (T-3.2)
-  
-  Implementa consulta espacial con ST_DWithin para consolidar folios
-  en un radio de 50 metros bajo el mismo folio maestro.
   ```
+  *(Cuerpo opcional detallando lógica técnica o breaking changes)*.
 
 ### 9.3 Ciclo de Vida del Trabajo por Tarea (Flujo Paso a Paso)
 
@@ -388,26 +410,54 @@ Para evitar aprobaciones cruzadas sin la especialidad adecuada, se configura el 
 /docs/            @CastanedaGema     # Diseñadora / Documentación
 ```
 
-> ⚠️ **Regla de Gobernanza:** Ningún autor de un Pull Request puede aprobar su propio código.
+#### 9.5.2 Criterios de Aceptación y Definición de Hecho (*Definition of Done - DoD*)
 
-#### 9.5.2 Criterios de Aceptación y Definición de Hecho (Definition of Done - DoD)
+Para que un Pull Request sea aceptado y marcado como completado en el tablero Kanban/WBS, debe cumplir integralmente la lista de verificación:
 
-Para que un Pull Request sea aceptado y marcado como completado en el tablero Kanban/WBS, debe cumplir integralmente la siguiente lista de verificación:
-* [x] El código implementa al 100% los criterios de aceptación especificados en la tarea de la WBS.
-* [x] El pipeline de CI/CD completa exitosamente la compilación, linter y escaneo de vulnerabilidades sin alertas.
-* [x] Las pruebas unitarias y de integración pasan satisfactoriamente con una cobertura superior al 80%.
-* [x] Se cuenta con la aprobación formal (Code Review) del miembro designado en `CODEOWNERS`.
-* [x] La documentación técnica correspondiente (Swagger, variables de entorno, manuales) ha sido actualizada.
+* [x] **Evidencia Fotográfica del Después Obligatoria:** Fotografía de la reparación concluida adjuntada por la cuadrilla.  
+* [x] **Pruebas Automatizadas en PASS:** Pipeline de CI/CD ejecutado correctamente con cobertura >= 80% (T-7.1).  
+* [x] **Revisión y Aprobación de CODEOWNERS:** Al menos una aprobación del responsable del área.  
+* [x] **Actualización de Estatus del Folio:** Notificación automática enviada al ciudadano confirmando la resolución.
 
-#### 9.5.3 Versionado Semántico (Semantic Versioning)
+#### 9.5.3 Versionado Semántico (*Semantic Versioning*)
 
-Cada sprint cerrado en el S.I.U. genera un incremento de versión etiquetado en `main` bajo la sintaxis `vMAJOR.MINOR.PATCH` (*ej. v0.1.0 para Sprint 1, v0.2.0 para Sprint 2*). Las notas del lanzamiento (*GitHub Releases*) consolidan las características entregadas en el Sprint Review.
+Cada sprint cerrado en el **S.I.U.** genera un incremento de versión etiquetado en `main` bajo la sintaxis `vMAJOR.MINOR.PATCH` (*ej. v0.1.0 para Sprint 1, v0.2.0 para Sprint 2*). Las notas del lanzamiento (*GitHub Releases*) consolidan las características entregadas en el Sprint Review.
 
 ---
 
 ## 10. Elección de Estructura Web y Tecnologías
 
-La arquitectura del sistema sigue el modelo **Cliente-Servidor desacoplado** mediante una API RESTful y una Aplicación Web Progresiva (PWA):
+### 10.1 Diagrama de Arquitectura del Sistema
+
+La arquitectura global del sistema adopta un modelo **Cliente-Servidor multicapa desacoplado** de alta escalabilidad, garantizando separación estricta de responsabilidades entre la presentación progresiva, la lógica de negocio modular y la persistencia geoespacial:
+
+<p align="center">
+  <img src="docs/diagrama%20de%20arquitectura.png" alt="Diagrama de Arquitectura del Sistema" width="85%" />
+</p>
+
+#### Desglose de Capas y Flujo de Comunicación:
+
+1. **Capa de Presentación (Frontend):**
+   * **Next.js + PWA (React 19 & Tailwind CSS):** Renderizado híbrido (SSR/SSG), arquitectura basada en componentes reutilizables, experiencia nativa offline con Service Workers e IndexedDB.
+   * **Leaflet / OpenStreetMap:** Renderizado vectorial y motor cartográfico interactivo ligero (< 40 KB) para visualización de fallas y polígonos urbanos.
+   * **Protocolo de Comunicación:** Peticiones seguras `HTTPS` con serialización estricta en formato `JSON` e interceptores JWT.
+
+2. **Capa de Aplicación (Backend API):**
+   * **NestJS API REST (Node.js con TypeScript):** Arquitectura empresarial modular con Inyección de Dependencias y DTOs fuertemente tipados.
+   * **Guardias de Autenticación (JWT & RBAC):** Control de acceso por roles (*CITIZEN, ADMIN, CREW*) y restricción de sesiones institucionales únicas concurrentes.
+   * **Subida de Archivos WebP:** Procesamiento y optimización de evidencias multimedia en memoria previo a su almacenamiento permanente.
+
+3. **Capa de Datos:**
+   * **PostgreSQL 16:** Motor relacional transaccional robusto para datos estructurados de usuarios, cuadrillas y órdenes de trabajo.
+   * **Extensión PostGIS 3.4 (Motor Geoespacial):** Indexación espacial GiST y funciones geométricas de distancia métrica en tiempo real (`ST_DWithin`) para clustering y desduplicación a 50m.
+
+4. **Servicios Externos e Infraestructura de Soporte:**
+   * **Cloud Storage:** Bucket de almacenamiento seguro de objetos para fotos de evidencia ("antes" y "después") con URLs firmadas temporales.
+   * **Resend API:** Servicio transaccional de alta entregabilidad para notificación automatizada de folios alfanuméricos y cambios de estado en tiempo real.
+
+---
+
+### 10.2 Comparativa y Justificación del Stack Tecnológico
 
 | Capa de Arquitectura | Tecnología Seleccionada | Justificación Técnica Frente a Requisitos |
 | :--- | :--- | :--- |
@@ -417,6 +467,29 @@ La arquitectura del sistema sigue el modelo **Cliente-Servidor desacoplado** med
 | **Base de Datos** | **PostgreSQL 16 + Extensión PostGIS 3.4** | Motor relacional robusto con soporte espacial nativo de clase industrial. Permite indexación GiST y funciones geométricas de distancia métrica en tiempo real (`ST_DWithin`). |
 | **Almacenamiento de Fotos** | **Cloud Storage (S3 / Cloudinary)** | Almacenamiento de objetos escalable con políticas de acceso seguro y generación de URLs firmadas temporales para consulta pública. |
 | **Mensajería y Notificaciones** | **Resend (API de Correo Electrónico)** | Servicio transaccional de alta entregabilidad para el envío automático de confirmaciones de folios, actualizaciones de estatus y avisos de conclusión de obra vía correo electrónico. |
+
+---
+
+### 10.3 Arquitectura y Modelo de Base de Datos Relacional / Espacial (PostgreSQL + PostGIS)
+
+El modelo de datos relacional y geoespacial ha sido diseñado para garantizar integridad referencial estricta, consultas métricas de alta velocidad y trazabilidad auditada de extremo a extremo:
+
+<p align="center">
+  <img src="docs/arquitectura_base_de_datos.png" alt="Arquitectura de Base de Datos - Modelo Entidad Relación" width="95%" />
+</p>
+
+#### Diccionario de Entidades Nucleares y Relaciones
+
+| Entidad | Clave Primaria | Campos Principales y Tipos | Relaciones y Cardinalidad | Propósito en el Negocio |
+| :--- | :---: | :--- | :--- | :--- |
+| **`AGENCIES`** | `id` (uuid) | `name` (string: *SIMAS, OLA, Obras Publicas*), `code` (string: *SIM, OLA, OP*) | • `1 : N` con `USERS` (*pertenece_a*)<br>• `1 : N` con `CREWS` (*posee*)<br>• `1 : N` con `REPORTS` (*gestiona*)<br>• `1 : N` con `CATEGORIES` | Entidades y dependencias municipales autónomas responsables del servicio urbano. |
+| **`USERS`** | `id` (uuid) | `email` (string, UK), `password_hash` (string), `full_name` (string), `role` (enum: *CITIZEN, ADMIN, CREW*), `agency_id` (uuid, FK nullable) | • `N : 1` con `AGENCIES`<br>• `1 : N` con `REPORTS` (*crea*)<br>• `1 : N` con `UPVOTES` (*realiza*) | Gestión integral de identidad y control de acceso basado en roles (RBAC). |
+| **`CATEGORIES`** | `id` (uuid) | `name` (string: *Fuga, Alumbrado, Bache*), `agency_id` (uuid, FK) | • `N : 1` con `AGENCIES`<br>• `1 : N` con `REPORTS` (*clasifica*) | Catálogo estandarizado de tipos de incidencias canalizadas por organismo. |
+| **`CREWS`** | `id` (uuid) | `name` (string: *Cuadrilla #04 Sector Centro*), `agency_id` (uuid, FK), `is_active` (boolean) | • `N : 1` con `AGENCIES`<br>• `1 : N` con `WORK_ORDERS` (*atiende*) | Flotillas y cuadrillas operativas desplegadas físicamente en el territorio municipal. |
+| **`REPORTS`** | `id` (uuid) | `folio` (string, UK: *SIM-2026-0842*), `user_id` (uuid, FK), `category_id` (uuid, FK), `agency_id` (uuid, FK), `location` (geometry: *Point 4326 PostGIS*), `address_reference` (text), `status` (enum: *REGISTRADO, ASIGNADO, EN_PROCESO, RESUELTO, RECHAZADO*), `sla_status` (enum: *VERDE, AMARILLO, ROJO*), `upvotes_count` (int), `created_at` (timestamp) | • `N : 1` con `USERS`, `CATEGORIES`, `AGENCIES`<br>• `1 : N` con `UPVOTES` (*recibe*)<br>• `1 : N` con `EVIDENCE_PHOTOS` (*contiene*)<br>• `1 : N` con `WORK_ORDERS` (*genera*) | Registro maestro del reporte ciudadano georreferenciado con coordenadas métricas espaciales. |
+| **`UPVOTES`** | `id` (uuid) | `report_id` (uuid, FK), `user_id` (uuid, FK), `created_at` (timestamp) | • `N : 1` con `REPORTS`<br>• `N : 1` con `USERS` | Confirmación comunitaria distribuida ("Sigue ahí") para ponderación dinámica de urgencia. |
+| **`EVIDENCE_PHOTOS`** | `id` (uuid) | `report_id` (uuid, FK), `photo_type` (enum: *INITIAL_BEFORE, FINAL_AFTER*), `image_url` (string), `captured_at` (timestamp) | • `N : 1` con `REPORTS` | Registro fotográfico auditable del estado inicial y del cierre técnico obligatorio en sitio. |
+| **`WORK_ORDERS`** | `id` (uuid) | `report_id` (uuid, FK), `crew_id` (uuid, FK), `status` (enum: *ASIGNADA, EN_SITIO, CONCLUIDA*), `assigned_at` (timestamp), `resolved_at` (timestamp) | • `N : 1` con `REPORTS`<br>• `N : 1` con `CREWS` | Órdenes de despacho técnico hacia cuadrillas para supervisión operativa y cumplimiento de SLA. |
 
 ---
 
@@ -529,8 +602,7 @@ Estrategia integral de doble anillo para blindar la plataforma contra datos inv�
 
 ### 14.1 Validaciones en la Interfaz de Usuario (FrontEnd)
 * **Campos Obligatorios:** Bloqueo del botón de avance si el usuario no ha capturado la fotografía o si el GPS se encuentra apagado en el dispositivo móvil.
-* **Expresiones Regulares:** Validación del folio institucional en el buscador:
-  $$\text{Regex: } \texttt{\textasciicircum[A-Z]\{3\}-\textbackslash d\{4\}-\textbackslash d\{4,6\}\$}$$
+* **Expresiones Regulares:** Validación del folio institucional en el buscador: `^[A-Z]{3}-\d{4}-\d{4,6}$`.
 * **Formatos y Tipos MIME:** Filtro en selector de archivos exclusivo para `image/jpeg`, `image/png` e `image/webp`. Límite de tamaño a 10 MB con compresión automática en canvas a WebP < 800 KB.
 * **Confirmación Previa:** Ventana de confirmación modal previa antes de transmitir el reporte con resumen visual de foto, coordenadas cartográficas y categoría seleccionada.
 
