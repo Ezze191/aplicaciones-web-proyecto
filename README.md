@@ -14,6 +14,7 @@
 * **Entregable:** Avances del Proyecto · Unidad 1 (`F-ACAD-174`)
 * **Fecha de Presentación:** 08 de Octubre de 2026
 * **Ubicación:** Torreón, Coahuila, México
+* **Prototipo Interactivo & Maquetación:** [SISTEMA DE GESTION DE INCIDENCIAS URBANAS – Figma](https://www.figma.com/design/CGnZg70NOCcgh4nI8NoP5a/SISTEMA-DE-GESTION-DE-INCIDENCIAS-URBANAS?node-id=0-1&p=f&t=wNc8P1ni78esi5Nz-0)
 
 ### 👥 Integrantes del Equipo de Desarrollo
 
@@ -244,7 +245,7 @@ Se selecciona el marco de trabajo **Scrum adaptado** a entornos de desarrollo we
   * Desarrollo de la API RESTful con validaciones estrictas vía DTOs y `class-validator`.
   * Integración del servicio transaccional de correo (*Resend API*), optimización de consultas SQL y pruebas unitarias/integración con Jest y Supertest.
 * 🎨 **Castañeda Barraza Gema Daniela — Diseñadora UI/UX y Desarrolladora de Interfaces Interactivas**
-  * Diseño del sistema visual, prototipado de alta fidelidad y wireframes responsivos en Figma bajo WCAG 2.1 AA.
+  * Diseño del sistema visual, prototipado de alta fidelidad y wireframes responsivos en Figma bajo WCAG 2.1 AA ([Ver Prototipo en Figma](https://www.figma.com/design/CGnZg70NOCcgh4nI8NoP5a/SISTEMA-DE-GESTION-DE-INCIDENCIAS-URBANAS?node-id=0-1&p=f&t=wNc8P1ni78esi5Nz-0)).
   * Integración cartográfica del mapa vectorial interactivo (*Leaflet / OpenStreetMap*).
   * Desarrollo del Tablero Kanban drag-and-drop para el Backoffice por dependencias.
   * Portal público de consulta de estatus por folio alfanumérico y elaboración de manuales de usuario y documentación técnica.
@@ -263,7 +264,7 @@ Estructura de Desglose de Trabajo organizada a lo largo de 4 meses (8 Sprints de
 | Fase / Sprint | ID Tarea | Descripción de la Tarea | Entregable / Criterio de Aceptación | Persona Asignada |
 | :--- | :---: | :--- | :--- | :--- |
 | **Mes 1: Sprint 1**<br>*(Semanas 1-2)* | **T-1.2** | Levantamiento de requisitos detallados, definición de historias de usuario y matriz. | Product Backlog documentado y validado en Jira/GitHub Projects. | Hernández Ayala Erik Fernando |
-| | **T-1.3** | Diseño UI/UX de wireframes de alta fidelidad para PWA y sistema Backoffice en Figma. | Prototipo interactivo navegable mobile y desktop en Figma. | Castañeda Barraza Gema Daniela |
+| | **T-1.3** | Diseño UI/UX de wireframes de alta fidelidad para PWA y sistema Backoffice en Figma. | Prototipo interactivo navegable en [Figma](https://www.figma.com/design/CGnZg70NOCcgh4nI8NoP5a/SISTEMA-DE-GESTION-DE-INCIDENCIAS-URBANAS?node-id=0-1&p=f&t=wNc8P1ni78esi5Nz-0). | Castañeda Barraza Gema Daniela |
 | | **T-1.4** | Configuración de entornos (Docker local, PostgreSQL + PostGIS, repositorio GitHub y CI/CD). | `docker-compose` funcional con PostgreSQL/PostGIS e integración continua configurada. | Reyes Cortinas César Fabián |
 | **Mes 1: Sprint 2**<br>*(Semanas 3-4)* | **T-2.1** | Inicialización de proyecto NestJS, definición de módulos core y configuración de TypeORM. | Estructura NestJS base con conexión ORM y migraciones automáticas funcionales. | González Acosta Sergio |
 | | **T-2.2** | Desarrollo del módulo de Autenticación, Roles (RBAC), JWT y endpoints Auth en Backend. | Endpoints Auth protegidos con JWT y roles (Admin, Cuadrilla, Ciudadano). | Reyes Cortinas César Fabián |
@@ -513,6 +514,10 @@ Para garantizar alta mantenibilidad, bajo acoplamiento y alta cohesión, se sele
 ---
 
 ## 12. Wireframes y Arquitectura de Información
+
+> 🎨 **Prototipado Interactivo y Maquetación Oficial en Figma:**  
+> Puedes consultar y navegar en tiempo real la arquitectura de pantallas, componentes de UI/UX, flujos de navegación y wireframes de alta fidelidad del proyecto directamente en:  
+> 🔗 **[SISTEMA DE GESTION DE INCIDENCIAS URBANAS – Figma](https://www.figma.com/design/CGnZg70NOCcgh4nI8NoP5a/SISTEMA-DE-GESTION-DE-INCIDENCIAS-URBANAS?node-id=0-1&p=f&t=wNc8P1ni78esi5Nz-0)**
 
 La arquitectura visual y de interacción fue prototipada en Figma abarcando los siguientes módulos clave:
 
