@@ -387,16 +387,16 @@ INSERT INTO report_categories (id, department_id, name, description, priority_we
 -- 6.4 Insertar Usuarios de Prueba para el Equipo (Password hash de ejemplo para 'Torreon2026!')
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone, role_id, department_id) VALUES
     -- Admin General
-    ('u0000000-0000-4000-8000-000000000001', 'admin@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Sergio', 'González Acosta', '8711000001', '11111111-1111-4111-8111-111111111111', NULL),
+    ('d0000000-0000-4000-8000-000000000001', 'admin@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Sergio', 'González Acosta', '8711000001', '11111111-1111-4111-8111-111111111111', NULL),
     -- Supervisores por Dependencia
-    ('u0000000-0000-4000-8000-000000000002', 'supervisor.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Erik Fernando', 'Hernández Ayala', '8711000002', '22222222-2222-4222-8222-222222222222', 'aaaa1111-1111-4111-8111-111111111111'),
-    ('u0000000-0000-4000-8000-000000000003', 'supervisor.ola@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Gema Daniela', 'Castañeda Barraza', '8711000003', '22222222-2222-4222-8222-222222222222', 'bbbb2222-2222-4222-8222-222222222222'),
-    ('u0000000-0000-4000-8000-000000000004', 'supervisor.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'César Fabián', 'Reyes Cortinas', '8711000004', '22222222-2222-4222-8222-222222222222', 'cccc3333-3333-4333-8333-333333333333'),
+    ('d0000000-0000-4000-8000-000000000002', 'supervisor.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Erik Fernando', 'Hernández Ayala', '8711000002', '22222222-2222-4222-8222-222222222222', 'aaaa1111-1111-4111-8111-111111111111'),
+    ('d0000000-0000-4000-8000-000000000003', 'supervisor.ola@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Gema Daniela', 'Castañeda Barraza', '8711000003', '22222222-2222-4222-8222-222222222222', 'bbbb2222-2222-4222-8222-222222222222'),
+    ('d0000000-0000-4000-8000-000000000004', 'supervisor.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'César Fabián', 'Reyes Cortinas', '8711000004', '22222222-2222-4222-8222-222222222222', 'cccc3333-3333-4333-8333-333333333333'),
     -- Jefes de Cuadrilla
-    ('u0000000-0000-4000-8000-000000000005', 'cuadrilla04.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Roberto', 'Méndez Lara', '8711000005', '33333333-3333-4333-8333-333333333333', 'aaaa1111-1111-4111-8111-111111111111'),
-    ('u0000000-0000-4000-8000-000000000006', 'cuadrilla01.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Arturo', 'Salazar Ríos', '8711000006', '33333333-3333-4333-8333-333333333333', 'cccc3333-3333-4333-8333-333333333333'),
+    ('d0000000-0000-4000-8000-000000000005', 'cuadrilla04.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Roberto', 'Méndez Lara', '8711000005', '33333333-3333-4333-8333-333333333333', 'aaaa1111-1111-4111-8111-111111111111'),
+    ('d0000000-0000-4000-8000-000000000006', 'cuadrilla01.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Arturo', 'Salazar Ríos', '8711000006', '33333333-3333-4333-8333-333333333333', 'cccc3333-3333-4333-8333-333333333333'),
     -- Ciudadano de Prueba
-    ('u0000000-0000-4000-8000-000000000007', 'ciudadano@correo.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Juan Carlos', 'Treviño Garza', '8711000007', '44444444-4444-4444-8444-444444444444', NULL);
+    ('d0000000-0000-4000-8000-000000000007', 'ciudadano@correo.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Juan Carlos', 'Treviño Garza', '8711000007', '44444444-4444-4444-8444-444444444444', NULL);
 
 -- 6.5 Insertar Cuadrillas Operativas con Polígono de Cobertura en Torreón Centro/Oriente
 INSERT INTO field_crews (id, department_id, name, coverage_polygon, is_active, leader_user_id) VALUES
@@ -406,7 +406,7 @@ INSERT INTO field_crews (id, department_id, name, coverage_polygon, is_active, l
         'Cuadrilla #04 - Sector Centro (SIMAS)',
         ST_GeomFromText('POLYGON((-103.4650 25.5250, -103.4000 25.5250, -103.4000 25.5650, -103.4650 25.5650, -103.4650 25.5250))', 4326),
         TRUE,
-        'u0000000-0000-4000-8000-000000000005'
+        'd0000000-0000-4000-8000-000000000005'
     ),
     (
         'fc000000-0000-4000-8000-000000000002',
@@ -414,7 +414,7 @@ INSERT INTO field_crews (id, department_id, name, coverage_polygon, is_active, l
         'Cuadrilla #01 - Vialidades Oriente (Obras Públicas)',
         ST_GeomFromText('POLYGON((-103.4000 25.5100, -103.3200 25.5100, -103.3200 25.5800, -103.4000 25.5800, -103.4000 25.5100))', 4326),
         TRUE,
-        'u0000000-0000-4000-8000-000000000006'
+        'd0000000-0000-4000-8000-000000000006'
     );
 
 -- 6.6 Insertar Reportes Ciudadanos de Prueba en Torreón (Plaza Mayor / Blvd. Independencia)
@@ -426,7 +426,7 @@ INSERT INTO incident_reports (
     (
         'f0000000-0000-4000-8000-000000000001',
         'SIM-2026-0842',
-        'u0000000-0000-4000-8000-000000000007',
+        'd0000000-0000-4000-8000-000000000007',
         'aaaa1111-1111-4111-8111-111111111111',
         'c1111111-1111-4111-8111-111111111111',
         'ALTO',
@@ -439,7 +439,7 @@ INSERT INTO incident_reports (
     (
         'f0000000-0000-4000-8000-000000000002',
         'OBP-2026-0199',
-        'u0000000-0000-4000-8000-000000000007',
+        'd0000000-0000-4000-8000-000000000007',
         'cccc3333-3333-4333-8333-333333333333',
         'c3333333-3333-4333-8333-111111111111',
         'CRITICO',
@@ -452,7 +452,7 @@ INSERT INTO incident_reports (
 
 -- 6.7 Insertar Historial de Estatus, Orden de Trabajo y Evidencia Inicial
 INSERT INTO report_status_history (report_id, previous_status, new_status, changed_by_user_id, notes) VALUES
-    ('f0000000-0000-4000-8000-000000000001', 'REGISTRADO', 'ASIGNADO', 'u0000000-0000-4000-8000-000000000002', 'Se canaliza de inmediato a Cuadrilla #04 de SIMAS Sector Centro.');
+    ('f0000000-0000-4000-8000-000000000001', 'REGISTRADO', 'ASIGNADO', 'd0000000-0000-4000-8000-000000000002', 'Se canaliza de inmediato a Cuadrilla #04 de SIMAS Sector Centro.');
 
 INSERT INTO work_orders (order_folio, report_id, crew_id, sla_deadline, status, field_notes) VALUES
     ('OT-SIMAS-2026-0144', 'f0000000-0000-4000-8000-000000000001', 'fc000000-0000-4000-8000-000000000001', CURRENT_TIMESTAMP + INTERVAL '24 hours', 'ASIGNADA', 'Llevar abrazadera de 4 pulgadas y equipo de corte de pavimento.');
