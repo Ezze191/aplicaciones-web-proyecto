@@ -21,6 +21,7 @@ import {
   Clock,
   ChevronRight,
 } from 'lucide-react';
+import { SiuLogo } from '../components/SiuLogo';
 import {
   CitizenDependency,
   CitizenReport,
@@ -174,9 +175,7 @@ export default function DashboardCiudadanoPage() {
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 h-16 sm:h-[76px] flex items-center justify-between">
           {/* Brand */}
           <div className="flex items-center gap-2.5">
-            <div className="bg-white/10 size-10 rounded-[12px] flex items-center justify-center shrink-0">
-              <MapPinHouse className="size-5 text-white" />
-            </div>
+            <SiuLogo variant="dark" />
             <div className="flex flex-col">
               <span className="font-bold text-[17px] leading-tight tracking-tight">
                 S.I.U

@@ -1,22 +1,23 @@
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  Building2, 
-  MapPin, 
-  User, 
-  Mail, 
-  Lock, 
-  Phone, 
-  Eye, 
-  EyeOff, 
-  UserPlus, 
+import {
+  MapPin,
+  User,
+  Mail,
+  Lock,
+  Phone,
+  Eye,
+  EyeOff,
+  UserPlus,
   ArrowRight,
   ShieldCheck,
-  CheckCircle2,
-  AlertCircle
+  CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
+import { SiuLogo } from '../components/SiuLogo';
+import { AlertType, SweetAlert } from '../components/SweetAlert';
+import { getBackendUrl } from '../lib/api';
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -33,10 +34,20 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
-    type: null,
-    message: ''
+  const [alertState, setAlertState] = useState<{
+    open: boolean;
+    type: AlertType;
+    title?: string;
+    message: string;
+  }>({
+    open: false,
+    type: 'info',
+    message: '',
   });
+
+  const openAlert = (type: AlertType, message: string, title?: string) => {
+    setAlertState({ open: true, type, title, message });
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -48,57 +59,88 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus({ type: null, message: '' });
+
+    if (formData.password.length < 8) {
+      openAlert(
+        'error',
+        'La contraseña debe tener al menos 8 caracteres.',
+        'Contraseña inválida',
+      );
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
-      setStatus({ type: 'error', message: 'Las contraseñas no coinciden.' });
+      openAlert(
+        'error',
+        'Las contraseñas no coinciden.',
+        'Verifica tu contraseña',
+      );
       return;
     }
 
     if (!formData.acceptTerms) {
-      setStatus({ type: 'error', message: 'Debes aceptar los términos y el aviso de privacidad.' });
+      openAlert(
+        'warning',
+        'Debes aceptar el Aviso de Privacidad y los términos del servicio S.I.U.',
+        'Términos requeridos',
+      );
       return;
     }
 
     setIsLoading(true);
+    const backendUrl = getBackendUrl();
 
     try {
-      // Endpoint a conectar con el backend NestJS (T-2.2 Auth Module)
-      const response = await fetch('http://localhost:3000/auth/register', {
+      const response = await fetch(`${backendUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          firstName: formData.firstName,
+          firstName: formData.firstName.trim(),
           lastName: `${formData.lastNamePaterno} ${formData.lastNameMaterno}`.trim(),
-          email: formData.email,
-          phone: formData.phone || undefined,
-          password: formData.password
-        })
+          email: formData.email.trim(),
+          phone: formData.phone.trim() || undefined,
+          password: formData.password,
+        }),
       });
+
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message || 'Error al procesar el registro en el servidor.');
+        const backendMessage = Array.isArray(data?.message)
+          ? data.message.join(' ')
+          : data?.message;
+        openAlert(
+          'error',
+          backendMessage ||
+          'No se pudo completar el registro. Verifica tus datos.',
+          'Error en el registro',
+        );
+        return;
       }
 
-      setStatus({ 
-        type: 'success', 
-        message: '¡Registro exitoso! Tu cuenta ciudadana ha sido creada con éxito. Redirigiendo...' 
-      });
+      openAlert(
+        'success',
+        data?.message ||
+        '¡Registro exitoso! Tu cuenta ciudadana ha sido creada correctamente.',
+        '¡Cuenta creada!',
+      );
 
-      setTimeout(() => {
-        window.location.href = '/login';
-      }, 2000);
-
-    } catch (err: unknown) {
-      // Modo demostración / simulación si el backend aún no está encendido
-      const errorMessage = err instanceof Error ? err.message : 'No se pudo conectar con el servidor local.';
-      console.warn('Backend offline o error:', errorMessage);
-      
-      setStatus({
-        type: 'success',
-        message: '¡Registro simulado con éxito! Credenciales validadas para el entorno de desarrollo.'
+      setFormData({
+        firstName: '',
+        lastNamePaterno: '',
+        lastNameMaterno: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+        acceptTerms: false,
       });
+    } catch {
+      openAlert(
+        'error',
+        `No se pudo conectar con el servidor (${backendUrl}). Verifica que el backend esté encendido.`,
+        'Error de conexión',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -109,9 +151,7 @@ export default function RegisterPage() {
       {/* Barra superior de navegación institucional */}
       <header className="bg-white border-b border-[#dce4ed] h-[76px] px-6 md:px-12 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="bg-[#edf5ff] w-10 h-10 rounded-xl flex items-center justify-center text-[#155ead]">
-            <Building2 className="w-5 h-5" />
-          </div>
+          <SiuLogo variant="light" />
           <div className="flex flex-col">
             <span className="font-bold text-[#0e315a] text-lg leading-tight tracking-tight">S.I.U</span>
             <span className="text-[10px] font-semibold text-[#5e7085] tracking-wider uppercase">Plataforma Municipal</span>
@@ -126,7 +166,7 @@ export default function RegisterPage() {
 
       {/* Contenido Principal */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8 items-stretch justify-center">
-        
+
         {/* Columna Izquierda: Información Institucional y Beneficios */}
         <section className="bg-[#0e315a] text-white rounded-2xl p-6 md:p-10 flex flex-col justify-between lg:w-5/12 shadow-sm">
           <div className="space-y-6">
@@ -162,9 +202,9 @@ export default function RegisterPage() {
           <div className="mt-8 pt-6 border-t border-white/15">
             <p className="text-xs text-[#afcef0] mb-2 font-medium">Dependencias integradas:</p>
             <div className="flex items-center gap-4 text-xs font-semibold text-white/90">
-              <span className="flex items-center gap-1.5">💧 SIMAS</span>
-              <span className="flex items-center gap-1.5">⚡ CFE / Alumbrado</span>
-              <span className="flex items-center gap-1.5">🚧 Obras Públicas</span>
+              <span className="flex items-center gap-1.5"> SIMAS</span>
+              <span className="flex items-center gap-1.5"> LA OLA</span>
+              <span className="flex items-center gap-1.5"> Obras Públicas</span>
             </div>
           </div>
         </section>
@@ -180,20 +220,13 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          {status.message && (
-            <div className={`p-4 rounded-xl mb-6 text-sm flex items-start gap-3 ${
-              status.type === 'success' 
-                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
-                : 'bg-rose-50 border border-rose-200 text-rose-800'
-            }`}>
-              {status.type === 'success' ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              )}
-              <span>{status.message}</span>
-            </div>
-          )}
+          <SweetAlert
+            open={alertState.open}
+            type={alertState.type}
+            title={alertState.title}
+            message={alertState.message}
+            onClose={() => setAlertState((prev) => ({ ...prev, open: false }))}
+          />
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Nombre(s) */}
@@ -354,7 +387,8 @@ export default function RegisterPage() {
                   name="acceptTerms"
                   checked={formData.acceptTerms}
                   onChange={handleChange}
-                  className="mt-0.5 rounded border-[#dce4ed] text-[#155ead] focus:ring-[#155ead]/30"
+                  required
+                  className="mt-0.5 rounded border-[#dce4ed] text-[#155ead] focus:ring-[#155ead]/30 cursor-pointer"
                 />
                 <span>
                   Acepto el uso de mis datos cívicos conforme al <strong>Aviso de Privacidad</strong> del Municipio de Torreón y los términos del servicio S.I.U.
@@ -365,8 +399,13 @@ export default function RegisterPage() {
             {/* Botón de envío */}
             <button
               type="submit"
-              disabled={isLoading}
-              className="w-full mt-4 h-12 bg-[#155ead] hover:bg-[#124d8f] disabled:opacity-70 text-white font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isLoading || !formData.acceptTerms}
+              title={
+                !formData.acceptTerms
+                  ? 'Debes aceptar el Aviso de Privacidad y los términos para registrarte'
+                  : undefined
+              }
+              className="w-full mt-4 h-12 bg-[#155ead] hover:bg-[#124d8f] disabled:bg-slate-300 disabled:text-slate-500 disabled:hover:bg-slate-300 disabled:cursor-not-allowed disabled:shadow-none text-white font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               {isLoading ? (
                 <span>Creando cuenta ciudadana...</span>
