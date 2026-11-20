@@ -1,1 +1,1 @@
-export { default } from './registro/page';
+export { default } from './auth/login/page';

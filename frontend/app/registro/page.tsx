@@ -421,7 +421,7 @@ export default function RegisterPage() {
             {/* Enlace para volver a inicio de sesión */}
             <div className="pt-4 text-center text-xs text-[#5e7085]">
               ¿Ya tienes una cuenta registrada?{' '}
-              <Link href="/login" className="font-semibold text-[#155ead] hover:underline">
+              <Link href="/" className="font-semibold text-[#155ead] hover:underline">
                 Iniciar sesión aquí
               </Link>
             </div>
