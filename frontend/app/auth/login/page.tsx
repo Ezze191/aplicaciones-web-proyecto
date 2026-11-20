@@ -43,7 +43,7 @@ export default function LoginPage() {
               Gestión de Incidencias Urbanas
             </p>
             <p className="text-sm text-slate-600">
-              Torreón, Coahuila · Zona Metropolitana
+              Torreón, Coahuila · Zona Metropolitanaa
             </p>
           </header>
 
