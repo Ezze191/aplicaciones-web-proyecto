@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { RoleGuard } from '../components/RoleGuard';
 import { Header } from '../components/Header';
 import { MesaHeader } from '../components/MesaHeader';
 import { FilterBar } from '../components/FilterBar';
@@ -17,7 +18,7 @@ import {
 } from '../types/dashboard';
 import { CheckCircle2 } from 'lucide-react';
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   // Current active dependency
   const [activeDependencyKey, setActiveDependencyKey] =
     useState<DependencyKey>('simas');
@@ -309,3 +310,11 @@ export default function DashboardPage() {
   );
 }
 
+
+export default function DashboardPage() {
+  return (
+    <RoleGuard allowedRoles={['ROLE_ADMIN', 'ROLE_SUPERVISOR']}>
+      <DashboardPageContent />
+    </RoleGuard>
+  );
+}

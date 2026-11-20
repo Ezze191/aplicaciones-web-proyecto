@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { RoleGuard } from '../components/RoleGuard';
 import {
   MapPinHouse,
   Bell,
@@ -30,7 +31,7 @@ import {
 
 type CitizenTab = 'mapa' | 'mis-reportes' | 'ayuda';
 
-export default function DashboardCiudadanoPage() {
+function DashboardCiudadanoContent() {
   const [activeTab, setActiveTab] = useState<CitizenTab>('mapa');
   const [reports, setReports] = useState<CitizenReport[]>(INITIAL_CITIZEN_REPORTS);
   const [selectedFilter, setSelectedFilter] = useState<CitizenDependency | 'Todas'>('Todas');
@@ -846,5 +847,13 @@ export default function DashboardCiudadanoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DashboardCiudadanoPage() {
+  return (
+    <RoleGuard allowedRoles={['ROLE_CITIZEN']}>
+      <DashboardCiudadanoContent />
+    </RoleGuard>
   );
 }
