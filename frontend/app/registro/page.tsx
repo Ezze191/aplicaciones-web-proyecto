@@ -16,10 +16,13 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { SiuLogo } from '../components/SiuLogo';
-import { AlertType, SweetAlert } from '../components/SweetAlert';
+import { AlertType, SweetAlert, showSuccessAlert } from '../components/SweetAlert';
 import { getBackendUrl } from '../lib/api';
+import { getDashboardPath, saveSession } from '../lib/session';
+import { useRouter } from 'next/navigation';
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     firstName: '',
     lastNamePaterno: '',
@@ -118,23 +121,20 @@ export default function RegisterPage() {
         return;
       }
 
-      openAlert(
-        'success',
+      saveSession({
+        accessToken: data.accessToken,
+        expiresAt: data.expiresAt,
+        redirectTo: data.redirectTo,
+        user: data.user,
+      });
+
+      await showSuccessAlert(
         data?.message ||
-        '¡Registro exitoso! Tu cuenta ciudadana ha sido creada correctamente.',
+          '¡Registro exitoso! Tu cuenta ciudadana ha sido creada correctamente.',
         '¡Cuenta creada!',
       );
-
-      setFormData({
-        firstName: '',
-        lastNamePaterno: '',
-        lastNameMaterno: '',
-        email: '',
-        phone: '',
-        password: '',
-        confirmPassword: '',
-        acceptTerms: false,
-      });
+      router.replace(getDashboardPath(data.user.role));
+      return;
     } catch {
       openAlert(
         'error',

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   MapPin,
   Mail,
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { SiuLogo } from '../../components/SiuLogo';
 import { AlertType, SweetAlert } from '../../components/SweetAlert';
+import { getBackendUrl } from '../../lib/api';
+import { getDashboardPath, getSession, saveSession } from '../../lib/session';
 
 interface FolioResult {
   folio: string;
@@ -55,6 +58,7 @@ const FOLIOS_DEMO: Record<string, FolioResult> = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [verPassword, setVerPassword] = useState(false);
@@ -79,7 +83,16 @@ export default function LoginPage() {
     setAlertState({ open: true, type, title, message });
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const session = getSession();
+    if (session) {
+      router.replace(getDashboardPath(session.user.role));
+    }
+  }, [router]);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!correo.trim() || !password.trim()) {
       openAlert(
@@ -90,11 +103,45 @@ export default function LoginPage() {
       return;
     }
 
-    openAlert(
-      'success',
-      `Inicio de sesión simulado para ${correo.trim()}. El sistema identificará tu cuenta y te redirigirá al panel correspondiente al conectar con el backend.`,
-      '¡Bienvenido a S.I.U!',
-    );
+    setIsLoading(true);
+    const backendUrl = getBackendUrl();
+
+    try {
+      const response = await fetch(`${backendUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: correo.trim(), password }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const backendMessage = Array.isArray(data?.message)
+          ? data.message.join(' ')
+          : data?.message;
+        openAlert(
+          'error',
+          backendMessage || 'No se pudo iniciar sesión. Verifica tus datos.',
+          'Error al iniciar sesión',
+        );
+        return;
+      }
+
+      saveSession({
+        accessToken: data.accessToken,
+        expiresAt: data.expiresAt,
+        redirectTo: data.redirectTo,
+        user: data.user,
+      });
+      router.replace(getDashboardPath(data.user.role));
+    } catch {
+      openAlert(
+        'error',
+        `No se pudo conectar con el servidor (${backendUrl}). Verifica que el backend esté encendido.`,
+        'Error de conexión',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBuscarFolio = (e: React.FormEvent) => {
@@ -361,10 +408,11 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                className="bg-[#155ead] hover:bg-[#124d8f] border border-[#155ead] flex gap-[8px] h-[48px] items-center justify-center px-[16px] rounded-[12px] w-full text-white text-[14px] font-semibold transition-colors cursor-pointer"
+                disabled={isLoading}
+                className="bg-[#155ead] hover:bg-[#124d8f] disabled:opacity-60 disabled:cursor-not-allowed border border-[#155ead] flex gap-[8px] h-[48px] items-center justify-center px-[16px] rounded-[12px] w-full text-white text-[14px] font-semibold transition-colors cursor-pointer"
               >
                 <LogIn className="w-5 h-5" />
-                <span>Iniciar sesión</span>
+                <span>{isLoading ? 'Ingresando...' : 'Iniciar sesión'}</span>
               </button>
 
               <p className="text-[#5e7085] text-[11px] text-center leading-[1.5]">

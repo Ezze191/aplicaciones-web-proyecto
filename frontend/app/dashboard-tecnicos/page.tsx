@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { RoleGuard } from '../components/RoleGuard';
 import Image from 'next/image';
 import {
   MapPinHouse,
@@ -31,7 +32,7 @@ import {
 type TechTab = 'asignados' | 'resueltos' | 'mi-cuadrilla';
 type SortMode = 'cercania' | 'urgencia';
 
-export default function DashboardTecnicosPage() {
+function DashboardTecnicosContent() {
   const [activeTab, setActiveTab] = useState<TechTab>('asignados');
   const [reports, setReports] = useState<TechReport[]>(INITIAL_TECH_REPORTS);
   const [sortMode, setSortMode] = useState<SortMode>('cercania');
@@ -657,5 +658,13 @@ export default function DashboardTecnicosPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DashboardTecnicosPage() {
+  return (
+    <RoleGuard allowedRoles={['ROLE_CREW']}>
+      <DashboardTecnicosContent />
+    </RoleGuard>
   );
 }

@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { DepartmentEntity } from './department.entity';
 import { RoleEntity } from './role.entity';
 
 @Entity({ name: 'users' })
@@ -42,6 +43,10 @@ export class UserEntity {
     default: null,
   })
   departmentId!: string | null;
+
+  @ManyToOne(() => DepartmentEntity, { eager: false, nullable: true })
+  @JoinColumn({ name: 'department_id' })
+  department?: DepartmentEntity | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
