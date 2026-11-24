@@ -1,32 +1,40 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Inbox, UserCheck, Wrench, CheckCircle2 } from 'lucide-react';
-import { DependencyConfig, Report, ReportStatus } from '../types/dashboard';
+import { CheckCircle2, Inbox, UserCheck, Wrench } from 'lucide-react';
+import { ApiReport } from '../lib/api';
 import { ReportCard } from './ReportCard';
 
+export type KanbanColumnKey =
+  | 'nuevos'
+  | 'asignados'
+  | 'en_reparacion'
+  | 'resueltos';
+
 interface KanbanBoardProps {
-  reports: Report[];
-  dependency: DependencyConfig;
-  onDispatch: (report: Report) => void;
-  onViewDetail: (report: Report) => void;
-  onStatusChange?: (reportId: string, newStatus: ReportStatus) => void;
+  reports: ApiReport[];
+  onDispatch: (report: ApiReport) => void;
+  onViewDetail: (report: ApiReport) => void;
+  onDropTransition: (report: ApiReport, targetColumn: KanbanColumnKey) => void;
 }
 
 interface ColumnConfig {
-  status: ReportStatus;
+  status: KanbanColumnKey;
   title: string;
   icon: React.ReactNode;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   reports,
-  dependency,
   onDispatch,
   onViewDetail,
-  onStatusChange,
+  onDropTransition,
 }) => {
-  const [mobileActiveColumn, setMobileActiveColumn] = useState<ReportStatus | 'all'>('all');
+  const [mobileActiveColumn, setMobileActiveColumn] = useState<
+    KanbanColumnKey | 'all'
+  >('all');
+  const [dragOverColumn, setDragOverColumn] =
+    useState<KanbanColumnKey | null>(null);
 
   const columns: ColumnConfig[] = [
     {
@@ -51,24 +59,45 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     },
   ];
 
-  const getReportsByStatus = (status: ReportStatus) => {
-    return reports.filter((r) => r.status === status);
-  };
+  const getReportsByStatus = (status: KanbanColumnKey) =>
+    reports.filter((r) => r.kanbanStatus === status);
 
   const visibleColumns =
     mobileActiveColumn === 'all'
       ? columns
       : columns.filter((c) => c.status === mobileActiveColumn);
 
+  const handleDragStart = (
+    e: React.DragEvent<HTMLDivElement>,
+    report: ApiReport,
+  ) => {
+    e.dataTransfer.setData('text/plain', report.id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDrop = (
+    e: React.DragEvent<HTMLDivElement>,
+    targetCol: KanbanColumnKey,
+  ) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const reportId = e.dataTransfer.getData('text/plain');
+    const report = reports.find((r) => r.id === reportId);
+    if (report && report.kanbanStatus !== targetCol) {
+      onDropTransition(report, targetCol);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 w-full">
-      {/* Mobile Column Quick Switcher Tabs (Only visible on small mobile screens) */}
-      <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto pb-1 w-full scrollbar-none">
+      {/* Mobile Column Quick Switcher */}
+      <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto pb-1 w-full">
         <button
+          type="button"
           onClick={() => setMobileActiveColumn('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer ${
             mobileActiveColumn === 'all'
-              ? 'bg-[#0e315a] text-white shadow-xs'
+              ? 'bg-[#0e315a] text-white'
               : 'bg-white text-slate-600 border border-slate-200'
           }`}
         >
@@ -79,18 +108,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           const isSelected = mobileActiveColumn === col.status;
           return (
             <button
+              type="button"
               key={col.status}
               onClick={() => setMobileActiveColumn(col.status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                 isSelected
-                  ? 'bg-[#0e315a] text-white shadow-xs'
+                  ? 'bg-[#0e315a] text-white'
                   : 'bg-white text-slate-600 border border-slate-200'
               }`}
             >
               <span>{col.title}</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                className={`text-[10px] px-1.5 rounded-full ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100'
                 }`}
               >
                 {count}
@@ -100,7 +130,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         })}
       </div>
 
-      {/* Kanban Columns Grid (Responsive: horizontal swipe / stacked on phone, 2 cols on tablet, 4 cols on desktop) */}
+      {/* Kanban Grid */}
       <div
         className={`w-full ${
           mobileActiveColumn === 'all'
@@ -110,17 +140,27 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       >
         {visibleColumns.map((col) => {
           const columnReports = getReportsByStatus(col.status);
+          const isDragOver = dragOverColumn === col.status;
 
           return (
             <div
               key={col.status}
-              className={`bg-[#e9eff5] rounded-[20px] p-3 flex flex-col gap-3 min-h-[460px] ${
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverColumn(col.status);
+              }}
+              onDragLeave={() => setDragOverColumn(null)}
+              onDrop={(e) => handleDrop(e, col.status)}
+              className={`rounded-[20px] p-3 flex flex-col gap-3 min-h-[440px] transition-colors ${
+                isDragOver
+                  ? 'bg-[#dceaff] ring-2 ring-[#155ead]'
+                  : 'bg-[#e9eff5]'
+              } ${
                 mobileActiveColumn === 'all'
                   ? 'min-w-[85vw] sm:min-w-0 snap-center shrink-0 sm:shrink flex-1'
                   : 'w-full'
               }`}
             >
-              {/* Column Header */}
               <div className="flex items-center justify-between px-2 py-1.5 w-full">
                 <div className="flex items-center gap-2">
                   {col.icon}
@@ -133,17 +173,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 </div>
               </div>
 
-              {/* Column Cards */}
               <div className="flex flex-col gap-3 w-full">
                 {columnReports.length > 0 ? (
                   columnReports.map((report) => (
                     <ReportCard
                       key={report.id}
                       report={report}
-                      dependency={dependency}
                       onDispatch={onDispatch}
                       onViewDetail={onViewDetail}
-                      onStatusChange={onStatusChange}
+                      onDragStart={handleDragStart}
                     />
                   ))
                 ) : (

@@ -1,311 +1,505 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Header } from '../components/Header';
-import { MesaHeader } from '../components/MesaHeader';
-import { FilterBar } from '../components/FilterBar';
-import { KanbanBoard } from '../components/KanbanBoard';
-import { DispatchModal } from '../components/DispatchModal';
-import { DetailModal } from '../components/DetailModal';
-import { ServiceFooter } from '../components/ServiceFooter';
-import { DEPENDENCIES, INITIAL_REPORTS } from '../data/dashboardData';
-import {
-  DependencyKey,
-  PriorityLevel,
-  Report,
-  ReportStatus,
-} from '../types/dashboard';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CheckCircle2 } from 'lucide-react';
+import { AnalyticsBiView } from '../components/AnalyticsBiView';
+import { AppLoader } from '../components/AppLoader';
+import { CrewsManagementView } from '../components/CrewsManagementView';
+import { DetailModal } from '../components/DetailModal';
+import { DispatchModal } from '../components/DispatchModal';
+import { FilterBar } from '../components/FilterBar';
+import { AdminSectionTab, Header } from '../components/Header';
+import { KanbanBoard, KanbanColumnKey } from '../components/KanbanBoard';
+import { MesaHeader } from '../components/MesaHeader';
+import { ServiceFooter } from '../components/ServiceFooter';
+import { AlertType, SweetAlert } from '../components/SweetAlert';
+import {
+  AnalyticsDashboard,
+  apiFetch,
+  ApiError,
+  ApiReport,
+  CrewView,
+  DepartmentItem,
+} from '../lib/api';
+import { logoutSession, useRequireAuth } from '../lib/auth';
 
-export default function DashboardPage() {
-  // Current active dependency
-  const [activeDependencyKey, setActiveDependencyKey] =
-    useState<DependencyKey>('simas');
+export default function DashboardAdminsPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useRequireAuth([
+    'ROLE_ADMIN',
+    'ROLE_SUPERVISOR',
+  ]);
 
-  // Reports state per dependency (allows in-memory dispatching, updating, etc.)
-  const [reportsData, setReportsData] =
-    useState<Record<string, Report[]>>(INITIAL_REPORTS);
+  const [activeSection, setActiveSection] = useState<AdminSectionTab>('kanban');
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [colonias, setColonias] = useState<string[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] =
+    useState<string>('ALL');
 
-  // Filters state
+  const [reports, setReports] = useState<ApiReport[]>([]);
+  const [crews, setCrews] = useState<CrewView[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Multicriteria filters (README 13.2)
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedColonia, setSelectedColonia] = useState('Todas las colonias');
-  const [selectedCrew, setSelectedCrew] = useState('all');
-  const [selectedPriority, setSelectedPriority] = useState<PriorityLevel | 'all'>('all');
+  const [selectedCrewId, setSelectedCrewId] = useState('all');
+  const [selectedRisk, setSelectedRisk] = useState('ALL');
+  const [minUpvotes, setMinUpvotes] = useState(0);
+  const [datePreset, setDatePreset] = useState('all');
+  const [selectedSla, setSelectedSla] = useState<
+    'all' | 'critico' | 'en_riesgo' | 'a_tiempo'
+  >('all');
+  const [showRejected, setShowRejected] = useState(false);
 
-  // Modals state
-  const [dispatchReport, setDispatchReport] = useState<Report | null>(null);
-  const [detailReport, setDetailReport] = useState<Report | null>(null);
+  const [dispatchReport, setDispatchReport] = useState<ApiReport | null>(null);
+  const [detailReport, setDetailReport] = useState<ApiReport | null>(null);
 
-  // Refresh & Toast feedback state
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [alertState, setAlertState] = useState<{
+    open: boolean;
+    type: AlertType;
+    title?: string;
+    message: string;
+  }>({ open: false, type: 'info', message: '' });
 
-  const currentDependency = DEPENDENCIES[activeDependencyKey];
-  const allCurrentReports = reportsData[activeDependencyKey] ?? [];
-
-  // Show toast utility
-  const showToast = (message: string) => {
-    setToastMessage(message);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Change active dependency
-  const handleSelectDependency = (key: DependencyKey) => {
-    setActiveDependencyKey(key);
-    // Reset dependency-specific dropdown filters
-    setSelectedColonia('Todas las colonias');
-    setSelectedCrew('all');
-    setSelectedPriority('all');
-    setSearchQuery('');
-  };
+  const userId = user?.id;
+  const userRole = user?.role;
+  const userDepartmentId = user?.departmentId ?? null;
 
-  // Filter reports dynamically
+  useEffect(() => {
+    if (userRole === 'ROLE_SUPERVISOR' && userDepartmentId) {
+      setSelectedDepartmentId(userDepartmentId);
+    }
+  }, [userRole, userDepartmentId]);
+
+  const loadStaticCatalogs = useCallback(async () => {
+    try {
+      const [depts, cols] = await Promise.all([
+        apiFetch<DepartmentItem[]>('/catalogs/departments', {
+          skipAuthRedirect: true,
+        }),
+        apiFetch<string[]>('/catalogs/colonias', { skipAuthRedirect: true }),
+      ]);
+      setDepartments(depts);
+      setColonias(cols);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const loadOperationalData = useCallback(async () => {
+    if (!userId) return;
+    const effectiveDeptId =
+      userRole === 'ROLE_SUPERVISOR' && userDepartmentId
+        ? userDepartmentId
+        : selectedDepartmentId;
+    setIsRefreshing(true);
+    try {
+      const deptParam =
+        effectiveDeptId !== 'ALL'
+          ? `&departmentId=${encodeURIComponent(effectiveDeptId)}`
+          : '';
+
+      const [reportsList, crewsList, analyticsData] = await Promise.all([
+        apiFetch<ApiReport[]>(`/reports?limit=200${deptParam}`),
+        apiFetch<CrewView[]>(
+          `/crews${
+            effectiveDeptId !== 'ALL'
+              ? `?departmentId=${encodeURIComponent(effectiveDeptId)}`
+              : ''
+          }`,
+        ),
+        apiFetch<AnalyticsDashboard>(
+          `/analytics/dashboard${
+            effectiveDeptId !== 'ALL'
+              ? `?departmentId=${encodeURIComponent(effectiveDeptId)}`
+              : ''
+          }`,
+        ),
+      ]);
+
+      setReports(reportsList);
+      setCrews(crewsList);
+      setAnalytics(analyticsData);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudieron sincronizar los datos del Backoffice.';
+      setAlertState({
+        open: true,
+        type: 'error',
+        title: 'Error de sincronización',
+        message: msg,
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [selectedDepartmentId, userId, userRole, userDepartmentId]);
+
+  useEffect(() => {
+    if (authLoading || !userId) return;
+    void loadStaticCatalogs();
+  }, [authLoading, userId, loadStaticCatalogs]);
+
+  useEffect(() => {
+    if (authLoading || !userId) return;
+    void loadOperationalData();
+  }, [authLoading, userId, loadOperationalData]);
+
   const filteredReports = useMemo(() => {
-    return allCurrentReports.filter((report) => {
-      // Search filter
+    const now = Date.now();
+    return reports.filter((r) => {
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const matchesFolio = report.folio.toLowerCase().includes(query);
-        const matchesTitle = report.title.toLowerCase().includes(query);
-        const matchesAddress = report.address.toLowerCase().includes(query);
-        const matchesColonia = report.colonia.toLowerCase().includes(query);
-
-        if (!matchesFolio && !matchesTitle && !matchesAddress && !matchesColonia) {
-          return false;
-        }
+        const q = searchQuery.toLowerCase().trim();
+        const hit =
+          r.folio.toLowerCase().includes(q) ||
+          r.categoryName.toLowerCase().includes(q) ||
+          r.addressReference.toLowerCase().includes(q) ||
+          r.description.toLowerCase().includes(q);
+        if (!hit) return false;
       }
 
-      // Colonia filter
       if (
         selectedColonia !== 'Todas las colonias' &&
-        report.colonia.toLowerCase() !== selectedColonia.toLowerCase()
+        !r.addressReference.toLowerCase().includes(selectedColonia.toLowerCase())
       ) {
         return false;
       }
 
-      // Crew filter
-      if (selectedCrew !== 'all') {
-        if (!report.assignedCrew || report.assignedCrew !== selectedCrew) {
+      if (selectedCrewId !== 'all') {
+        if (selectedCrewId === 'unassigned') {
+          if (r.assignedCrewId) return false;
+        } else if (r.assignedCrewId !== selectedCrewId) {
           return false;
         }
       }
 
-      // Priority filter
-      if (selectedPriority !== 'all' && report.priority !== selectedPriority) {
+      if (selectedRisk !== 'ALL' && r.riskLevel !== selectedRisk) {
+        return false;
+      }
+
+      if (minUpvotes > 0 && r.upvotesCount < minUpvotes) {
+        return false;
+      }
+
+      if (datePreset !== 'all') {
+        const createdMs = new Date(r.createdAt).getTime();
+        const days =
+          datePreset === 'today' ? 1 : datePreset === 'week' ? 7 : 30;
+        if (now - createdMs > days * 24 * 3600000) return false;
+      }
+
+      if (selectedSla !== 'all' && r.slaStatus !== selectedSla) {
         return false;
       }
 
       return true;
     });
-  }, [allCurrentReports, searchQuery, selectedColonia, selectedCrew, selectedPriority]);
+  }, [
+    reports,
+    searchQuery,
+    selectedColonia,
+    selectedCrewId,
+    selectedRisk,
+    minUpvotes,
+    datePreset,
+    selectedSla,
+  ]);
 
-  // Counts for alert badges
+  const kanbanReports = useMemo(
+    () => filteredReports.filter((r) => r.currentStatus !== 'RECHAZADO'),
+    [filteredReports],
+  );
+
+  const rejectedReports = useMemo(
+    () => filteredReports.filter((r) => r.currentStatus === 'RECHAZADO'),
+    [filteredReports],
+  );
+
   const criticalCount = useMemo(
-    () => allCurrentReports.filter((r) => r.priority === 'critico').length,
-    [allCurrentReports]
+    () => kanbanReports.filter((r) => r.slaStatus === 'critico').length,
+    [kanbanReports],
   );
   const atRiskCount = useMemo(
-    () => allCurrentReports.filter((r) => r.priority === 'en_riesgo').length,
-    [allCurrentReports]
+    () => kanbanReports.filter((r) => r.slaStatus === 'en_riesgo').length,
+    [kanbanReports],
   );
   const onTimeCount = useMemo(
-    () => allCurrentReports.filter((r) => r.priority === 'a_tiempo').length,
-    [allCurrentReports]
+    () => kanbanReports.filter((r) => r.slaStatus === 'a_tiempo').length,
+    [kanbanReports],
   );
 
-  // Dispatch Action: Moves report from 'nuevos' to 'asignados'
-  const handleConfirmDispatch = (
-    reportId: string,
-    assignedCrew: string,
-    notes?: string
+  const handleDropTransition = async (
+    report: ApiReport,
+    targetColumn: KanbanColumnKey,
   ) => {
-    setReportsData((prev) => {
-      const depReports = prev[activeDependencyKey] ?? [];
-      const updated = depReports.map((r) => {
-        if (r.id === reportId) {
-          return {
-            ...r,
-            status: 'asignados' as ReportStatus,
-            assignedCrew: assignedCrew,
-            description: notes
-              ? `${r.description ?? ''} [Instrucción: ${notes}]`
-              : r.description,
-          };
-        }
-        return r;
-      });
-      return {
-        ...prev,
-        [activeDependencyKey]: updated,
-      };
-    });
+    if (targetColumn === 'asignados' && !report.assignedCrewId) {
+      setDispatchReport(report);
+      return;
+    }
 
-    showToast(`Folio ${dispatchReport?.folio} despachado exitosamente a ${assignedCrew}`);
-  };
-
-  // Advance Report Status Action (for testing lifecycle)
-  const handleAdvanceStatus = (reportId: string, nextStatus: ReportStatus) => {
-    setReportsData((prev) => {
-      const depReports = prev[activeDependencyKey] ?? [];
-      const updated = depReports.map((r) => {
-        if (r.id === reportId) {
-          return {
-            ...r,
-            status: nextStatus,
-          };
-        }
-        return r;
-      });
-      return {
-        ...prev,
-        [activeDependencyKey]: updated,
-      };
-    });
-
-    const statusNames: Record<ReportStatus, string> = {
-      nuevos: 'Nuevos',
-      asignados: 'Asignados',
-      en_reparacion: 'En Reparación',
-      resueltos: 'Resueltos',
+    const targetMap: Record<
+      KanbanColumnKey,
+      'REGISTRADO' | 'ASIGNADO' | 'EN_PROCESO' | 'RESUELTO'
+    > = {
+      nuevos: 'REGISTRADO',
+      asignados: 'ASIGNADO',
+      en_reparacion: 'EN_PROCESO',
+      resueltos: 'RESUELTO',
     };
-    showToast(`Estado actualizado a: ${statusNames[nextStatus]}`);
+
+    try {
+      await apiFetch(`/reports/${report.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: targetMap[targetColumn] }),
+      });
+      showToast(`Folio ${report.folio} movido a ${targetColumn.replace('_', ' ')}`);
+      await loadOperationalData();
+    } catch (err) {
+      setAlertState({
+        open: true,
+        type: 'error',
+        title: 'Error al mover tarjeta',
+        message:
+          err instanceof ApiError ? err.message : 'No se pudo cambiar estatus.',
+      });
+    }
   };
 
-  // Refresh Board handler
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-      showToast('Tablero de operaciones sincronizado');
-    }, 600);
-  };
-
-  // Export to CSV handler
-  const handleExport = () => {
+  const handleExportCsv = () => {
     const headers = [
       'Folio',
       'Dependencia',
-      'Título',
+      'Categoría',
+      'Riesgo',
       'Dirección',
-      'Colonia',
       'Estado',
-      'Prioridad',
+      'Semáforo_SLA',
       'Horas_Transcurridas',
       'SLA_Horas',
       'Confirmaciones',
       'Cuadrilla_Asignada',
     ];
-
     const rows = filteredReports.map((r) => [
       r.folio,
-      currentDependency.fullName,
-      `"${r.title}"`,
-      `"${r.address}"`,
-      `"${r.colonia}"`,
-      r.status,
-      r.priority,
+      `"${r.departmentName}"`,
+      `"${r.categoryName}"`,
+      r.riskLevel,
+      `"${r.addressReference}"`,
+      r.currentStatus,
+      r.slaStatus,
       r.elapsedHours,
       r.slaHours,
-      r.confirmations,
-      `"${r.assignedCrew ?? 'Sin asignar'}"`,
+      r.upvotesCount,
+      `"${r.assignedCrewName ?? 'Sin asignar'}"`,
     ]);
-
-    const csvContent =
+    const csv =
       'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
+      [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute(
-      'download',
-      `reportes_${currentDependency.key}_${new Date().toISOString().slice(0, 10)}.csv`
-    );
+    link.href = encodeURI(csv);
+    link.download = `siu_reportes_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
     showToast('Reportes exportados a CSV');
   };
 
+  const handleLogout = async () => {
+    await logoutSession();
+    router.replace('/auth/login');
+  };
+
+  if (authLoading || !user) {
+    return (
+      <AppLoader
+        title="Cargando panel operativo Backoffice"
+        subtitle="Obteniendo incidencias, cuadrillas e indicadores de tu dependencia"
+      />
+    );
+  }
+
+  const activeDept = departments.find((d) => d.id === selectedDepartmentId);
+
   return (
     <div className="min-h-screen bg-[#f3f6fa] flex flex-col font-sans text-[#172b43] antialiased">
-      {/* Toast feedback notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#0e315a] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0e315a] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold">
           <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Main Top Header */}
-      <Header
-        currentDependency={currentDependency}
-        allDependencies={DEPENDENCIES}
-        onSelectDependency={handleSelectDependency}
-        unreadCount={criticalCount}
+      <SweetAlert
+        open={alertState.open}
+        type={alertState.type}
+        title={alertState.title}
+        message={alertState.message}
+        onClose={() => setAlertState((prev) => ({ ...prev, open: false }))}
       />
 
-      {/* Main Board Container */}
-      <main className="flex-1 max-w-[1560px] w-full mx-auto px-3.5 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 flex flex-col gap-4 sm:gap-6">
-        {/* Mesa de operación title & actions */}
-        <MesaHeader
-          dependency={currentDependency}
-          totalVisible={filteredReports.length}
-          onRefresh={handleRefresh}
-          onExport={handleExport}
-          isRefreshing={isRefreshing}
-        />
+      <Header
+        currentUser={user}
+        departments={departments}
+        selectedDepartmentId={selectedDepartmentId}
+        onSelectDepartment={setSelectedDepartmentId}
+        activeSection={activeSection}
+        onSelectSection={setActiveSection}
+        onLogout={() => void handleLogout()}
+      />
 
-        {/* Search, Filter dropdowns & Priority Badges */}
-        <FilterBar
-          dependency={currentDependency}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedColonia={selectedColonia}
-          onColoniaChange={setSelectedColonia}
-          selectedCrew={selectedCrew}
-          onCrewChange={setSelectedCrew}
-          selectedPriority={selectedPriority}
-          onPriorityChange={setSelectedPriority}
-          criticalCount={criticalCount}
-          atRiskCount={atRiskCount}
-          onTimeCount={onTimeCount}
-        />
+      <main className="flex-1 max-w-[1560px] w-full mx-auto px-3.5 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 flex flex-col gap-5">
+        {activeSection === 'kanban' && (
+          <>
+            <MesaHeader
+              departmentName={activeDept?.name ?? 'Todas las dependencias'}
+              departmentCode={activeDept?.code ?? user.departmentCode}
+              totalVisible={kanbanReports.length}
+              onRefresh={() => void loadOperationalData()}
+              onExport={handleExportCsv}
+              isRefreshing={isRefreshing}
+            />
 
-        {/* 4-Column Kanban Board */}
-        <KanbanBoard
-          reports={filteredReports}
-          dependency={currentDependency}
-          onDispatch={(report) => setDispatchReport(report)}
-          onViewDetail={(report) => setDetailReport(report)}
-          onStatusChange={handleAdvanceStatus}
-        />
+            <FilterBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              colonias={colonias}
+              selectedColonia={selectedColonia}
+              onColoniaChange={setSelectedColonia}
+              crews={crews}
+              selectedCrewId={selectedCrewId}
+              onCrewChange={setSelectedCrewId}
+              selectedRisk={selectedRisk}
+              onRiskChange={setSelectedRisk}
+              minUpvotes={minUpvotes}
+              onMinUpvotesChange={setMinUpvotes}
+              datePreset={datePreset}
+              onDatePresetChange={setDatePreset}
+              selectedSla={selectedSla}
+              onSlaChange={setSelectedSla}
+              criticalCount={criticalCount}
+              atRiskCount={atRiskCount}
+              onTimeCount={onTimeCount}
+            />
 
-        {/* Service & SLA Footer */}
-        <ServiceFooter dependency={currentDependency} />
+            <KanbanBoard
+              reports={kanbanReports}
+              onDispatch={(r) => setDispatchReport(r)}
+              onViewDetail={(r) => setDetailReport(r)}
+              onDropTransition={(r, col) => void handleDropTransition(r, col)}
+            />
+
+            {rejectedReports.length > 0 && (
+              <div className="bg-white border border-[#dce4ed] rounded-[16px] p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowRejected((v) => !v)}
+                  className="text-xs font-bold text-[#be313b] hover:underline cursor-pointer"
+                >
+                  {showRejected
+                    ? `Ocultar reportes rechazados (${rejectedReports.length})`
+                    : `Ver reportes rechazados (${rejectedReports.length})`}
+                </button>
+                {showRejected && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                    {rejectedReports.map((r) => (
+                      <div
+                        key={r.id}
+                        onClick={() => setDetailReport(r)}
+                        className="p-3 rounded-xl border border-[#f5c6cb] bg-[#fdeef0]/40 cursor-pointer"
+                      >
+                        <p className="text-xs font-bold text-[#be313b]">
+                          {r.folio} · RECHAZADO
+                        </p>
+                        <p className="text-sm font-semibold text-[#172b43]">
+                          {r.categoryName}
+                        </p>
+                        <p className="text-xs text-[#5e7085]">
+                          {r.addressReference}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <ServiceFooter
+              slaHours={activeDept?.defaultSlaHours ?? 24}
+              departmentName={activeDept?.code ?? 'S.I.U'}
+            />
+          </>
+        )}
+
+        {activeSection === 'flotillas' && (
+          <CrewsManagementView
+            crews={crews}
+            departments={departments}
+            currentUser={user}
+            onRefresh={loadOperationalData}
+            onNotify={(type, msg) => {
+              if (type === 'success') showToast(msg);
+              else
+                setAlertState({
+                  open: true,
+                  type: 'error',
+                  title: 'Flotillas',
+                  message: msg,
+                });
+            }}
+          />
+        )}
+
+        {activeSection === 'analitica' && (
+          <AnalyticsBiView analytics={analytics} loading={isRefreshing} />
+        )}
       </main>
 
-      {/* Dispatch Modal (Figma Frame 3:17365) */}
       <DispatchModal
         report={dispatchReport}
-        dependency={currentDependency}
         isOpen={Boolean(dispatchReport)}
         onClose={() => setDispatchReport(null)}
-        onConfirmDispatch={handleConfirmDispatch}
+        onSuccess={(_updated, msg) => {
+          showToast(msg);
+          void loadOperationalData();
+        }}
+        onError={(msg) =>
+          setAlertState({
+            open: true,
+            type: 'error',
+            title: 'Error de despacho',
+            message: msg,
+          })
+        }
       />
 
-      {/* Detail & Evidence Modal */}
       <DetailModal
         report={detailReport}
-        dependency={currentDependency}
         isOpen={Boolean(detailReport)}
         onClose={() => setDetailReport(null)}
-        onAdvanceStatus={handleAdvanceStatus}
+        onUpdated={(_updated, msg) => {
+          showToast(msg);
+          void loadOperationalData();
+        }}
+        onError={(msg) =>
+          setAlertState({
+            open: true,
+            type: 'error',
+            title: 'Error operativo',
+            message: msg,
+          })
+        }
+        onOpenDispatch={(r) => setDispatchReport(r)}
       />
     </div>
   );
 }
-

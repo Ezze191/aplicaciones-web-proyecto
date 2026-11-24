@@ -1,12 +1,23 @@
 jest.mock('@nestjs/typeorm', () => ({
   InjectRepository: () => () => undefined,
 }));
+jest.mock('@nestjs/jwt', () => ({
+  JwtService: class {},
+}));
+jest.mock('../notifications/notifications.service', () => ({
+  NotificationsService: class {},
+}));
 
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import {
+  isInstitutionalDomain,
+  resolveInstitutionalDomain,
+} from './domain-routing.util';
 import { RegisterDto } from './dto/register.dto';
 import { RoleEntity } from './entities/role.entity';
 import { UserEntity } from './entities/user.entity';
@@ -83,5 +94,59 @@ describe('AuthService', () => {
     await expect(service.register(dto)).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
+  });
+
+  it('blocks public web registration for institutional domains', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.register({ ...dto, email: 'jesus@simas.com.mx' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    await expect(
+      service.register({ ...dto, email: 'roberto@operador.laola.com.mx' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('resolves institutional admin and operator domains regardless of username', () => {
+    expect(resolveInstitutionalDomain('jesus@simas.com.mx')).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'SIM',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('roberto@operador.simas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'SIM',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(resolveInstitutionalDomain('admin@laola.com.mx')).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'OLA',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('operador@operador.laola.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'OLA',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(
+      resolveInstitutionalDomain('admin@obraspublicas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'OBP',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('operador@operador.obraspublicas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'OBP',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(isInstitutionalDomain('ciudadano@gmail.com')).toBe(false);
   });
 });
