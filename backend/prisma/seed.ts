@@ -121,6 +121,22 @@ async function main() {
       priorityWeight: 5,
     },
     {
+      id: 'c1111111-1111-4111-8111-444444444444',
+      departmentId: 'aaaa1111-1111-4111-8111-111111111111',
+      name: 'Falta de Agua o Baja Presión',
+      description:
+        'Interrupción del suministro de agua potable o presión insuficiente en la red hidráulica.',
+      priorityWeight: 4,
+    },
+    {
+      id: 'c1111111-1111-4111-8111-555555555555',
+      departmentId: 'aaaa1111-1111-4111-8111-111111111111',
+      name: 'Azolve o Encharcamiento en Colector / Cárcamo',
+      description:
+        'Línea de drenaje azolvada o encharcamiento persistente que requiere desazolve con Vactor.',
+      priorityWeight: 4,
+    },
+    {
       id: 'c2222222-2222-4222-8222-111111111111',
       departmentId: 'bbbb2222-2222-4222-8222-222222222222',
       name: 'Acumulación de Basura / Tiradero Clandestino',
@@ -137,6 +153,22 @@ async function main() {
       priorityWeight: 4,
     },
     {
+      id: 'c2222222-2222-4222-8222-333333333333',
+      departmentId: 'bbbb2222-2222-4222-8222-222222222222',
+      name: 'Falta de Barrido en Vialidad o Camellón',
+      description:
+        'Calle, avenida, bulevar o camellón central con residuos que requiere barrido manual.',
+      priorityWeight: 2,
+    },
+    {
+      id: 'c2222222-2222-4222-8222-444444444444',
+      departmentId: 'bbbb2222-2222-4222-8222-222222222222',
+      name: 'Limpieza de Plaza, Parque o Contenedor',
+      description:
+        'Plaza, parque, paseo público, monumento o contenedor de basura desbordado.',
+      priorityWeight: 3,
+    },
+    {
       id: 'c3333333-3333-4333-8333-111111111111',
       departmentId: 'cccc3333-3333-4333-8333-333333333333',
       name: 'Bache Profundo en Vialidad',
@@ -150,6 +182,22 @@ async function main() {
       name: 'Hundimiento / Socavón en Pavimento',
       description: 'Fractura grave del subsuelo con riesgo de colapso vehicular.',
       priorityWeight: 5,
+    },
+    {
+      id: 'c3333333-3333-4333-8333-333333333333',
+      departmentId: 'cccc3333-3333-4333-8333-333333333333',
+      name: 'Daño en Banqueta, Guarnición o Paso Vial',
+      description:
+        'Banqueta fracturada, guarnición destruida o daño en paso a desnivel o puente vehicular.',
+      priorityWeight: 3,
+    },
+    {
+      id: 'c3333333-3333-4333-8333-444444444444',
+      departmentId: 'cccc3333-3333-4333-8333-333333333333',
+      name: 'Deterioro en Parque, Techumbre o Espacio Comunitario',
+      description:
+        'Daño estructural en infraestructura de plaza, parque, techumbre escolar o centro comunitario.',
+      priorityWeight: 3,
     },
   ];
 

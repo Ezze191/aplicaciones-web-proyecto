@@ -296,7 +296,10 @@ export default function DashboardTecnicosPage() {
         capturedDataUrl,
         `cierre-${selectedOrder.folio}.webp`,
       );
-      const uploaded = await uploadEvidenceFile(webpFile);
+      const uploaded = await uploadEvidenceFile(webpFile, {
+        folio: selectedOrder.folio,
+        stage: 'despues',
+      });
 
       await apiFetch(`/work-orders/${selectedOrder.id}/resolve`, {
         method: 'POST',
@@ -387,7 +390,18 @@ export default function DashboardTecnicosPage() {
       {/* Header Flotilla */}
       <header className="bg-[#0e315a] text-white w-full shrink-0 shadow-md sticky top-0 z-30">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 h-16 sm:h-[76px] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('asignados');
+              setSelectedOrder(null);
+              if (typeof window !== 'undefined') {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }}
+            title="Ir al inicio del portal de cuadrilla"
+            className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity cursor-pointer"
+          >
             {user?.departmentCode ||
             crewInfo?.departmentCode ||
             inferDepartmentCodeFromEmail(user?.email) ? (
@@ -411,7 +425,7 @@ export default function DashboardTecnicosPage() {
                 PORTAL OPERATIVO DE CUADRILLA · S.I.U
               </span>
             </div>
-          </div>
+          </button>
 
           <nav className="hidden md:flex items-center gap-1 bg-black/20 p-1 rounded-xl border border-white/10">
             <button

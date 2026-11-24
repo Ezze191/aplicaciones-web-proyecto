@@ -17,7 +17,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CrewsService } from './crews.service';
-import { CreateCrewDto } from './dto/create-crew.dto';
+import { AssignCrewWorkersDto, CreateCrewDto } from './dto/create-crew.dto';
 import { UpdateCrewDto } from './dto/update-crew.dto';
 
 @ApiTags('Crews')
@@ -42,6 +42,15 @@ export class CrewsController {
     });
   }
 
+  @Roles('ROLE_ADMIN', 'ROLE_SUPERVISOR')
+  @Get('workers')
+  listWorkers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.crewsService.listDepartmentWorkers(user, departmentId);
+  }
+
   @Roles('ROLE_CREW')
   @Get('my')
   getMyCrew(@CurrentUser() user: AuthenticatedUser) {
@@ -55,6 +64,16 @@ export class CrewsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.crewsService.createCrew(dto, user);
+  }
+
+  @Roles('ROLE_ADMIN', 'ROLE_SUPERVISOR')
+  @Post(':id/workers')
+  assignWorkers(
+    @Param('id') id: string,
+    @Body() dto: AssignCrewWorkersDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.crewsService.assignWorkersToCrew(id, dto.workerIds, user);
   }
 
   @Roles('ROLE_ADMIN', 'ROLE_SUPERVISOR')

@@ -106,6 +106,19 @@ export interface PhotographicEvidenceItem {
   capturedAt: string;
 }
 
+export interface CrewWorkerItem {
+  id: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  position: string;
+  crewId: string | null;
+  crewName: string | null;
+  departmentId: string;
+  departmentCode: string;
+}
+
 export interface CrewView {
   id: string;
   name: string;
@@ -120,6 +133,7 @@ export interface CrewView {
     email: string;
     phone: string | null;
   };
+  workers?: CrewWorkerItem[];
   coverageCoordinates: Array<{ lat: number; lng: number }>;
   center: { lat: number; lng: number } | null;
   activeServices: number;
@@ -285,12 +299,24 @@ export async function apiFetch<T>(
   return data as T;
 }
 
-export async function uploadEvidenceFile(file: File): Promise<{ url: string }> {
+export async function uploadEvidenceFile(
+  file: File,
+  options?: { folio?: string; stage?: 'antes' | 'despues' },
+): Promise<{ url: string; path?: string; provider?: string }> {
   const formData = new FormData();
   formData.append('file', file);
-  return apiFetch<{ url: string }>('/uploads/evidence', {
-    method: 'POST',
-    body: formData,
-    skipAuthRedirect: true,
-  });
+  if (options?.folio) {
+    formData.append('folio', options.folio);
+  }
+  if (options?.stage) {
+    formData.append('stage', options.stage);
+  }
+  return apiFetch<{ url: string; path?: string; provider?: string }>(
+    '/uploads/evidence',
+    {
+      method: 'POST',
+      body: formData,
+      skipAuthRedirect: true,
+    },
+  );
 }

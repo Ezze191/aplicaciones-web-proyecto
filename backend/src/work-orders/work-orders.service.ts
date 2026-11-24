@@ -264,6 +264,14 @@ export class WorkOrdersService {
       });
     }
 
+    await this.notificationsService.createInApp({
+      departmentId: workOrder.report.departmentId,
+      reportId: workOrder.reportId,
+      title: `Cuadrilla en sitio · ${workOrder.report.folio}`,
+      message: `${workOrder.crew?.name ?? 'Operador'} inició la reparación en ${workOrder.report.addressReference}.`,
+      type: 'REPORT_IN_PROCESS',
+    });
+
     if (workOrder.report.citizen?.email) {
       await this.notificationsService.sendEventEmail('REPORT_IN_PROCESS', {
         recipientEmail: workOrder.report.citizen.email,
@@ -385,6 +393,14 @@ export class WorkOrdersService {
         type: 'REPORT_RESOLVED',
       });
     }
+
+    await this.notificationsService.createInApp({
+      departmentId: workOrder.report.departmentId,
+      reportId: workOrder.reportId,
+      title: `Ticket resuelto · ${workOrder.report.folio}`,
+      message: `${workOrder.crew?.name ?? 'La cuadrilla'} cerró el reporte con evidencia fotográfica.`,
+      type: 'REPORT_RESOLVED',
+    });
 
     if (workOrder.report.citizen?.email) {
       await this.notificationsService.sendEventEmail('REPORT_RESOLVED', {

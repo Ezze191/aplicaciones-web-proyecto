@@ -16,10 +16,12 @@ import {
   ChevronRight,
   Search,
   RefreshCw,
+  Flame,
 } from 'lucide-react';
 import { AppLoader } from '../components/AppLoader';
 import { CiudadanoHeader } from '../components/CiudadanoHeader';
 import { DepartmentLogo } from '../components/DepartmentLogo';
+import { ReportMapModal } from '../components/ReportMapModal';
 import { AlertType, SweetAlert } from '../components/SweetAlert';
 import {
   apiFetch,
@@ -79,9 +81,16 @@ export default function DashboardCiudadanoPage() {
   const [selectedDeptCode, setSelectedDeptCode] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [modalReportId, setModalReportId] = useState<string | null>(null);
+  const [modalMode, setModalMode] = useState<'mini' | 'expanded'>('mini');
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(true);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number }>(
     TORREON_CENTER,
   );
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(
+    TORREON_CENTER,
+  );
+  const [mapZoom, setMapZoom] = useState<number>(14);
   const [gpsActive, setGpsActive] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [upvotingId, setUpvotingId] = useState<string | null>(null);
@@ -147,6 +156,8 @@ export default function DashboardCiudadanoPage() {
           lng: pos.coords.longitude,
         };
         setUserCoords(next);
+        setMapCenter(next);
+        setMapZoom(16);
         setGpsActive(true);
         void loadData(next);
         showToast('Mapa centrado en tu ubicación GPS');
@@ -154,7 +165,7 @@ export default function DashboardCiudadanoPage() {
       () => {
         setGpsActive(false);
       },
-      { enableHighAccuracy: true, timeout: 8000 },
+      { enableHighAccuracy: true, timeout: 10000 },
     );
   }, [loadData]);
 
@@ -162,18 +173,29 @@ export default function DashboardCiudadanoPage() {
     if (authLoading) return;
     void loadData(userCoords);
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      const onSuccess = (pos: GeolocationPosition) => {
+        const next = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        setUserCoords(next);
+        setMapCenter(next);
+        setMapZoom(16);
+        setGpsActive(true);
+        void loadData(next);
+      };
+
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const next = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          };
-          setUserCoords(next);
-          setGpsActive(true);
-          void loadData(next);
+        onSuccess,
+        () => {
+          // Respaldo rápido si highAccuracy tardó o falló
+          navigator.geolocation.getCurrentPosition(
+            onSuccess,
+            () => undefined,
+            { enableHighAccuracy: false, timeout: 8000 },
+          );
         },
-        () => undefined,
-        { enableHighAccuracy: false, timeout: 5000 },
+        { enableHighAccuracy: true, timeout: 8000 },
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,6 +226,31 @@ export default function DashboardCiudadanoPage() {
       null
     );
   }, [filteredReports, selectedReportId]);
+
+  const modalReport = useMemo(() => {
+    if (!modalReportId) return null;
+    return reports.find((r) => r.id === modalReportId) ?? null;
+  }, [reports, modalReportId]);
+
+  const heatmapPoints = useMemo(() => {
+    if (!showHeatmap) return [];
+    return filteredReports.map((r) => {
+      const riskWeight =
+        r.riskLevel === 'CRITICO'
+          ? 5
+          : r.riskLevel === 'ALTO'
+            ? 3.5
+            : r.riskLevel === 'MEDIO'
+              ? 2
+              : 1;
+      const upvoteBoost = Math.min(4, (r.upvotesCount || 1) * 0.25);
+      return {
+        lat: r.lat,
+        lng: r.lng,
+        weight: riskWeight + upvoteBoost,
+      };
+    });
+  }, [filteredReports, showHeatmap]);
 
   const resolvedThisWeekCount = useMemo(() => {
     const sevenDaysAgo = Date.now() - 7 * 24 * 3600000;
@@ -266,6 +313,15 @@ export default function DashboardCiudadanoPage() {
         title={alertState.title}
         message={alertState.message}
         onClose={() => setAlertState((prev) => ({ ...prev, open: false }))}
+      />
+
+      <ReportMapModal
+        report={modalReport}
+        mode={modalMode}
+        onModeChange={setModalMode}
+        onClose={() => setModalReportId(null)}
+        onUpvote={(id) => void handleConfirmVote(id)}
+        upvoting={upvotingId === modalReport?.id}
       />
 
       {toastMessage && (
@@ -331,8 +387,22 @@ export default function DashboardCiudadanoPage() {
         {activeTab === 'mapa' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             <div className="lg:col-span-8 flex flex-col gap-3">
-              {/* Filter Pills */}
+                {/* Filter Pills + Toggle Mapa de Calor */}
               <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setShowHeatmap((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-semibold shadow-2xs transition-all cursor-pointer shrink-0 border ${
+                    showHeatmap
+                      ? 'bg-[#ea580c] text-white border-[#ea580c]'
+                      : 'bg-white text-[#172b43] border-[#dce4ed] hover:bg-slate-50'
+                  }`}
+                  title="Activar o desactivar capa de mapa de calor"
+                >
+                  <Flame className="size-3.5" />
+                  <span>Mapa de calor</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setSelectedDeptCode('ALL')}
@@ -367,16 +437,19 @@ export default function DashboardCiudadanoPage() {
               {/* Real Map Container */}
               <div className="relative">
                 <InteractiveMap
-                  center={
-                    selectedReport
-                      ? { lat: selectedReport.lat, lng: selectedReport.lng }
-                      : userCoords
-                  }
-                  zoom={14}
+                  center={mapCenter}
+                  zoom={mapZoom}
                   heightClass="h-[430px] sm:h-[500px]"
                   userLocation={userCoords}
                   showLocateButton
                   onLocateClick={requestGps}
+                  showSearchBar
+                  searchPlaceholder="Buscar calle, colonia o lugar en Torreón..."
+                  onSearchSelect={(lat, lng) => {
+                    setMapCenter({ lat, lng });
+                    setMapZoom(16);
+                  }}
+                  heatmapPoints={heatmapPoints}
                   markers={filteredReports.map((r) => ({
                     id: r.id,
                     lat: r.lat,
@@ -385,8 +458,119 @@ export default function DashboardCiudadanoPage() {
                     colorHex: r.departmentColor,
                     selected: selectedReport?.id === r.id,
                   }))}
-                  onMarkerClick={(id) => setSelectedReportId(id)}
+                  onMarkerClick={(id) => {
+                    setSelectedReportId(id);
+                    setModalReportId(id);
+                    setModalMode('mini');
+                    const found = filteredReports.find((r) => r.id === id);
+                    if (found) {
+                      setMapCenter({ lat: found.lat, lng: found.lng });
+                      setMapZoom(16);
+                    }
+                  }}
                 />
+
+                {/* Tabla / Leyenda de colores por dependencia */}
+                <div className="mt-3 bg-white border border-[#dce4ed] rounded-[16px] p-3.5 sm:p-4 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <h3 className="text-[12px] font-bold uppercase tracking-wide text-[#0e315a]">
+                      Simbología del mapa (colores por dependencia)
+                    </h3>
+                    <span className="text-[11px] text-[#5e7085]">
+                      Haz clic en una bolita para ver foto y detalle
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                    {departments.map((dept) => {
+                      const count = reports.filter(
+                        (r) => r.departmentCode === dept.code,
+                      ).length;
+                      const active = selectedDeptCode === dept.code;
+                      return (
+                        <button
+                          key={dept.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedDeptCode(active ? 'ALL' : dept.code)
+                          }
+                          className={`flex items-center gap-2.5 p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                            active
+                              ? 'bg-[#edf5ff] border-[#155ead]'
+                              : 'bg-[#f8fafd] border-[#e4ebf3] hover:bg-slate-100/80'
+                          }`}
+                        >
+                          <span
+                            className="size-4 rounded-full border-2 border-white shadow-sm shrink-0"
+                            style={{ backgroundColor: dept.colorHex }}
+                          />
+                          <DepartmentLogo code={dept.code} size="xs" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-bold text-[#172b43] truncate">
+                              {dept.code} ({count})
+                            </p>
+                            <p className="text-[10px] text-[#5e7085] truncate">
+                              {dept.name.split('(')[0].trim()}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    <div className="flex items-center gap-2.5 p-2 rounded-xl border bg-[#f8fafd] border-[#e4ebf3]">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="22"
+                        height="26"
+                        viewBox="0 0 40 48"
+                        fill="none"
+                        className="shrink-0"
+                        aria-hidden="true"
+                      >
+                        <ellipse
+                          cx="20"
+                          cy="44"
+                          rx="8"
+                          ry="3"
+                          fill="#0e315a"
+                          fillOpacity="0.22"
+                        />
+                        <path
+                          d="M20 3C11.716 3 5 9.716 5 18C5 28.4 17.6 40.6 19.3 42.2C19.7 42.58 20.3 42.58 20.7 42.2C22.4 40.6 35 28.4 35 18C35 9.716 28.284 3 20 3Z"
+                          fill="#0e315a"
+                          stroke="#ffffff"
+                          strokeWidth="2.5"
+                        />
+                        <circle cx="20" cy="14.2" r="3.6" fill="#ffffff" />
+                        <path
+                          d="M13.5 24.2C13.9 20.8 16.6 18.8 20 18.8C23.4 18.8 26.1 20.8 26.5 24.2C26.58 24.85 26.07 25.4 25.42 25.4H14.58C13.93 25.4 13.42 24.85 13.5 24.2Z"
+                          fill="#ffffff"
+                        />
+                      </svg>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-[#172b43] truncate">
+                          Tu ubicación
+                        </p>
+                        <p className="text-[10px] text-[#5e7085] truncate">
+                          {gpsActive ? 'GPS activo' : 'Centro Torreón'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {showHeatmap && (
+                    <div className="mt-3 pt-2.5 border-t border-[#eef2f6] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#5e7085]">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-[#172b43]">
+                        <Flame className="size-3.5 text-[#ea580c]" />
+                        Densidad de reportes (Mapa de calor)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span>Baja</span>
+                        <div className="h-2 w-28 sm:w-36 rounded-full bg-gradient-to-r from-[#0ea5e9] via-[#facc15] to-[#dc2626]" />
+                        <span className="font-semibold text-[#be313b]">Alta</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Mobile Floating Selected Card Overlay */}
                 {selectedReport && (
@@ -558,7 +742,11 @@ export default function DashboardCiudadanoPage() {
                         <button
                           key={rep.id}
                           type="button"
-                          onClick={() => setSelectedReportId(rep.id)}
+                          onClick={() => {
+                            setSelectedReportId(rep.id);
+                            setMapCenter({ lat: rep.lat, lng: rep.lng });
+                            setMapZoom(16);
+                          }}
                           className={`w-full text-left p-3 rounded-[12px] border transition-all cursor-pointer flex items-center justify-between gap-2 ${
                             isActive
                               ? 'bg-[#edf5ff] border-[#155ead]'

@@ -16,6 +16,7 @@ import {
   estimateEtaMinutes,
   haversineDistanceMeters,
 } from '../common/utils/geo.util';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCrewDto, PolygonPointDto } from './dto/create-crew.dto';
 import { UpdateCrewDto } from './dto/update-crew.dto';
 import { FieldCrewEntity } from './entities/field-crew.entity';
@@ -41,6 +42,19 @@ interface CrewQueryRow {
   covers_incident: boolean | null;
 }
 
+export interface CrewWorkerItem {
+  id: string;
+  employeeCode: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  position: string;
+  crewId: string | null;
+  crewName: string | null;
+  departmentId: string;
+  departmentCode: string;
+}
+
 export interface CrewView {
   id: string;
   name: string;
@@ -55,6 +69,7 @@ export interface CrewView {
     email: string;
     phone: string | null;
   };
+  workers: CrewWorkerItem[];
   coverageCoordinates: Array<{ lat: number; lng: number }>;
   center: { lat: number; lng: number } | null;
   activeServices: number;
@@ -79,6 +94,7 @@ export class CrewsService {
     private readonly rolesRepo: Repository<RoleEntity>,
     @InjectRepository(DepartmentEntity)
     private readonly departmentsRepo: Repository<DepartmentEntity>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async listCrews(
@@ -155,6 +171,64 @@ export class CrewsService {
       params,
     );
 
+    const crewIds = rows.map((r) => r.id);
+    const workersByCrew = new Map<string, CrewWorkerItem[]>();
+    if (crewIds.length > 0) {
+      const workerRows = await this.dataSource.query<
+        Array<{
+          id: string;
+          employee_code: string;
+          first_name: string;
+          last_name: string;
+          phone: string | null;
+          position: string;
+          crew_id: string | null;
+          crew_name: string | null;
+          department_id: string;
+          department_code: string;
+        }>
+      >(
+        `
+        SELECT
+          w.id,
+          w.employee_code,
+          w.first_name,
+          w.last_name,
+          w.phone,
+          w.position,
+          w.crew_id,
+          fc.name AS crew_name,
+          w.department_id,
+          d.code AS department_code
+        FROM department_workers w
+        JOIN departments d ON d.id = w.department_id
+        LEFT JOIN field_crews fc ON fc.id = w.crew_id
+        WHERE w.is_active = TRUE
+          AND w.crew_id = ANY($1::uuid[])
+        ORDER BY w.employee_code ASC
+        `,
+        [crewIds],
+      );
+
+      for (const w of workerRows) {
+        if (!w.crew_id) continue;
+        const list = workersByCrew.get(w.crew_id) ?? [];
+        list.push({
+          id: w.id,
+          employeeCode: w.employee_code,
+          firstName: w.first_name,
+          lastName: w.last_name,
+          phone: w.phone,
+          position: w.position,
+          crewId: w.crew_id,
+          crewName: w.crew_name,
+          departmentId: w.department_id,
+          departmentCode: w.department_code,
+        });
+        workersByCrew.set(w.crew_id, list);
+      }
+    }
+
     const views: CrewView[] = rows.map((row) => {
       const activeServices = Number(row.active_services || 0);
       const loadStatus: 'baja' | 'normal' | 'alta' =
@@ -191,6 +265,7 @@ export class CrewsService {
           email: row.leader_email,
           phone: row.leader_phone,
         },
+        workers: workersByCrew.get(row.id) ?? [],
         coverageCoordinates: this.parseGeoJsonPolygon(row.coverage_geojson),
         center,
         activeServices,
@@ -257,14 +332,27 @@ export class CrewsService {
       throw new NotFoundException('La dependencia especificada no existe.');
     }
 
-    const normalizedEmail = dto.leaderEmail.trim().toLowerCase();
+    const lockedDomain = this.getLockedOperatorDomain(department.code);
+    const rawUsername = dto.leaderUsername?.trim()
+      ? dto.leaderUsername.trim().toLowerCase()
+      : dto.leaderEmail?.trim()
+        ? dto.leaderEmail.trim().toLowerCase().split('@')[0]
+        : '';
+
+    if (!rawUsername || !/^[a-z0-9._-]{2,64}$/.test(rawUsername)) {
+      throw new BadRequestException(
+        'Ingresa un nombre de usuario válido (solo letras, números, puntos o guiones, mínimo 2 caracteres).',
+      );
+    }
+
+    const normalizedEmail = `${rawUsername}@${lockedDomain}`;
     const existingEmail = await this.usersRepo.findOne({
       where: { email: normalizedEmail },
       select: { id: true },
     });
     if (existingEmail) {
       throw new ConflictException(
-        'El correo asignado al jefe de cuadrilla ya está registrado.',
+        `El correo ${normalizedEmail} ya está registrado en el sistema.`,
       );
     }
 
@@ -275,7 +363,17 @@ export class CrewsService {
       throw new BadRequestException('El rol ROLE_CREW no existe en la BD.');
     }
 
-    const wkt = this.buildPolygonWkt(dto.polygonCoordinates);
+    const defaultPolygon: PolygonPointDto[] = [
+      { lat: 25.525, lng: -103.465 },
+      { lat: 25.525, lng: -103.38 },
+      { lat: 25.575, lng: -103.38 },
+      { lat: 25.575, lng: -103.465 },
+    ];
+    const wkt = this.buildPolygonWkt(
+      dto.polygonCoordinates && dto.polygonCoordinates.length >= 3
+        ? dto.polygonCoordinates
+        : defaultPolygon,
+    );
     const passwordHash = await bcrypt.hash(dto.leaderPassword, 10);
 
     const createdCrewId = await this.dataSource.transaction(async (manager) => {
@@ -306,7 +404,22 @@ export class CrewsService {
         [department.id, dto.name.trim(), wkt, leaderId],
       );
 
-      return crewRows[0].id;
+      const newCrewId = crewRows[0].id;
+
+      if (dto.workerIds && dto.workerIds.length > 0) {
+        await manager.query(
+          `
+          UPDATE department_workers
+          SET crew_id = $1
+          WHERE id = ANY($2::uuid[])
+            AND department_id = $3
+            AND is_active = TRUE
+          `,
+          [newCrewId, dto.workerIds, department.id],
+        );
+      }
+
+      return newCrewId;
     });
 
     const all = await this.listCrews(user, { departmentId: department.id });
@@ -314,7 +427,162 @@ export class CrewsService {
     if (!created) {
       throw new NotFoundException('No se pudo recuperar la cuadrilla creada.');
     }
+
+    await this.notificationsService.createInApp({
+      userId: created.leader.id,
+      title: `Bienvenido a ${created.name}`,
+      message: `Tu acceso de operador (${created.leader.email}) quedó activo en ${department.name} con ${created.workers.length} trabajador(es) asignado(s).`,
+      type: 'CREW_ASSIGNED',
+    });
+
+    await this.notificationsService.createInApp({
+      departmentId: department.id,
+      title: `Nueva flotilla registrada · ${created.name}`,
+      message: `Responsable: ${created.leader.firstName} ${created.leader.lastName} (${created.leader.email}).`,
+      type: 'CREW_CREATED',
+    });
+
     return created;
+  }
+
+  async listDepartmentWorkers(
+    user: AuthenticatedUser,
+    requestedDepartmentId?: string,
+  ): Promise<CrewWorkerItem[]> {
+    const deptId =
+      user.role === 'ROLE_SUPERVISOR'
+        ? user.departmentId
+        : requestedDepartmentId || null;
+
+    const params: unknown[] = [];
+    const where: string[] = ['w.is_active = TRUE'];
+    if (deptId) {
+      params.push(deptId);
+      where.push(`w.department_id = $${params.length}`);
+    }
+
+    const rows = await this.dataSource.query<
+      Array<{
+        id: string;
+        employee_code: string;
+        first_name: string;
+        last_name: string;
+        phone: string | null;
+        position: string;
+        crew_id: string | null;
+        crew_name: string | null;
+        department_id: string;
+        department_code: string;
+      }>
+    >(
+      `
+      SELECT
+        w.id,
+        w.employee_code,
+        w.first_name,
+        w.last_name,
+        w.phone,
+        w.position,
+        w.crew_id,
+        fc.name AS crew_name,
+        w.department_id,
+        d.code AS department_code
+      FROM department_workers w
+      JOIN departments d ON d.id = w.department_id
+      LEFT JOIN field_crews fc ON fc.id = w.crew_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY (w.crew_id IS NOT NULL) ASC, w.employee_code ASC
+      `,
+      params,
+    );
+
+    return rows.map((w) => ({
+      id: w.id,
+      employeeCode: w.employee_code,
+      firstName: w.first_name,
+      lastName: w.last_name,
+      phone: w.phone,
+      position: w.position,
+      crewId: w.crew_id,
+      crewName: w.crew_name,
+      departmentId: w.department_id,
+      departmentCode: w.department_code,
+    }));
+  }
+
+  async assignWorkersToCrew(
+    crewId: string,
+    workerIds: string[],
+    user: AuthenticatedUser,
+  ): Promise<CrewView> {
+    const crew = await this.crewsRepo.findOne({ where: { id: crewId } });
+    if (!crew) {
+      throw new NotFoundException('Flotilla operativa no encontrada.');
+    }
+
+    if (
+      user.role === 'ROLE_SUPERVISOR' &&
+      crew.departmentId !== user.departmentId
+    ) {
+      throw new ForbiddenException(
+        'No puedes modificar trabajadores de una flotilla de otra dependencia.',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      // Desasignar trabajadores previos de esta flotilla que ya no estén seleccionados
+      await manager.query(
+        `
+        UPDATE department_workers
+        SET crew_id = NULL
+        WHERE crew_id = $1
+          AND department_id = $2
+        `,
+        [crew.id, crew.departmentId],
+      );
+
+      // Asignar los trabajadores seleccionados pertenecientes a la misma dependencia
+      if (workerIds.length > 0) {
+        await manager.query(
+          `
+          UPDATE department_workers
+          SET crew_id = $1
+          WHERE id = ANY($2::uuid[])
+            AND department_id = $3
+            AND is_active = TRUE
+          `,
+          [crew.id, workerIds, crew.departmentId],
+        );
+      }
+    });
+
+    const all = await this.listCrews(user, { departmentId: crew.departmentId });
+    const updated = all.find((c) => c.id === crew.id);
+    if (!updated) {
+      throw new NotFoundException('Flotilla no encontrada tras actualizar.');
+    }
+
+    await this.notificationsService.createInApp({
+      userId: updated.leader.id,
+      title: `Personal actualizado · ${updated.name}`,
+      message: `Se asignaron ${updated.workers.length} trabajador(es) a tu flotilla operativa.`,
+      type: 'CREW_UPDATED',
+    });
+
+    return updated;
+  }
+
+  private getLockedOperatorDomain(departmentCode: string): string {
+    switch (departmentCode.toUpperCase()) {
+      case 'SIM':
+        return 'operador.simas.com.mx';
+      case 'OLA':
+        return 'operador.laola.com.mx';
+      case 'OBP':
+        return 'operador.obraspublicas.com.mx';
+      default:
+        return `operador.${departmentCode.toLowerCase()}.com.mx`;
+    }
   }
 
   async updateCrew(

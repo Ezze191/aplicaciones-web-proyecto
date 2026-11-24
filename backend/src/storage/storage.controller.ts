@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Post,
   Req,
@@ -24,6 +25,8 @@ export class StorageController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
+        folio: { type: 'string', example: 'SIM-2026-0842' },
+        stage: { type: 'string', enum: ['antes', 'despues'] },
       },
     },
   })
@@ -35,10 +38,18 @@ export class StorageController {
   async uploadEvidence(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
+    @Body() body?: { folio?: string; stage?: string },
   ) {
     const protocol = req.protocol || 'http';
     const host = req.get('host');
     const origin = host ? `${protocol}://${host}` : undefined;
-    return this.storageService.uploadEvidence(file, origin);
+    const rawStage = body?.stage?.trim().toLowerCase();
+    const stage =
+      rawStage === 'despues' || rawStage === 'antes' ? rawStage : undefined;
+
+    return this.storageService.uploadEvidence(file, origin, {
+      folio: body?.folio,
+      stage,
+    });
   }
 }

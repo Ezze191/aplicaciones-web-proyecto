@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { AppLoader } from '../components/AppLoader';
 import { CiudadanoHeader } from '../components/CiudadanoHeader';
+import { DepartmentLogo } from '../components/DepartmentLogo';
 import { AlertType, SweetAlert } from '../components/SweetAlert';
 import {
   apiFetch,
@@ -33,6 +34,18 @@ import {
 import { useRequireAuth } from '../lib/auth';
 import { compressImageToWebP } from '../lib/imageUtils';
 import { enqueueOfflineReport } from '../lib/offlineQueue';
+import {
+  DURATION_OPTIONS,
+  evaluateReportTriage,
+  IMPACT_LEVEL_OPTIONS,
+  LOCATION_CONTEXT_BY_AREA,
+  PROBLEM_AREAS,
+  ProblemAreaKey,
+  QUESTION_2_BY_AREA,
+  REFERENCE_SELECT_OPTIONS,
+  RiskLevel,
+  TRIAGE_ISSUES_BY_AREA,
+} from '../lib/reportTriage';
 
 const InteractiveMap = dynamic(
   () => import('../components/InteractiveMap').then((m) => m.InteractiveMap),
@@ -53,8 +66,6 @@ interface DuplicateMatch {
   distanceMeters: number;
 }
 
-type RiskLevelOption = 'BAJO' | 'MEDIO' | 'ALTO' | 'CRITICO';
-
 export default function ReportarFallaPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useRequireAuth();
@@ -62,9 +73,18 @@ export default function ReportarFallaPage() {
 
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [riskLevel, setRiskLevel] = useState<RiskLevelOption>('MEDIO');
-  const [descripcion, setDescripcion] = useState('');
+
+  // Cuestionario guiado paso a paso (1 pregunta a la vez — cero texto libre)
+  const [quizStep, setQuizStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [areaKey, setAreaKey] = useState<ProblemAreaKey>('AGUA_DRENAJE');
+  const [issueId, setIssueId] = useState<string>(
+    TRIAGE_ISSUES_BY_AREA.AGUA_DRENAJE[0].id,
+  );
+  const [locationContext, setLocationContext] = useState<string>(
+    LOCATION_CONTEXT_BY_AREA.AGUA_DRENAJE.options[0],
+  );
+  const [impactLevel, setImpactLevel] = useState<RiskLevel>('MEDIO');
+  const [duration, setDuration] = useState<string>(DURATION_OPTIONS[0]);
 
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
@@ -76,7 +96,9 @@ export default function ReportarFallaPage() {
   });
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [direccion, setDireccion] = useState('');
-  const [referencia, setReferencia] = useState('');
+  const [referencia, setReferencia] = useState<string>(
+    REFERENCE_SELECT_OPTIONS[0],
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeduplicacion, setShowDeduplicacion] = useState(false);
@@ -92,24 +114,53 @@ export default function ReportarFallaPage() {
     message: string;
   }>({ open: false, type: 'info', message: '' });
 
+  const resolveAddressFromCoords = async (lat: number, lng: number) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+        { headers: { 'Accept-Language': 'es' } },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        address?: {
+          road?: string;
+          house_number?: string;
+          neighbourhood?: string;
+          suburb?: string;
+        };
+        display_name?: string;
+      };
+      const road = data.address?.road;
+      const num = data.address?.house_number;
+      const col = data.address?.neighbourhood || data.address?.suburb;
+      const formatted = road
+        ? `${road}${num ? ` #${num}` : ''}${col ? `, ${col}` : ''}, Torreón, Coah.`
+        : data.display_name?.split(',').slice(0, 3).join(', ');
+      if (formatted) {
+        setDireccion(formatted);
+      }
+    } catch {
+      // ignore reverse geocode errors
+    }
+  };
+
   useEffect(() => {
     apiFetch<CategoryItem[]>('/catalogs/categories', { skipAuthRedirect: true })
       .then((list) => {
         setCategories(list);
-        if (list.length > 0) {
-          setSelectedCategoryId(list[0].id);
-        }
       })
       .catch(() => undefined);
 
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setCoords({
+          const next = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
-          });
+          };
+          setCoords(next);
           setGpsAccuracy(Math.round(pos.coords.accuracy));
+          void resolveAddressFromCoords(next.lat, next.lng);
         },
         () => undefined,
         { enableHighAccuracy: true, timeout: 8000 },
@@ -117,10 +168,23 @@ export default function ReportarFallaPage() {
     }
   }, []);
 
-  const selectedCategory = useMemo(
-    () => categories.find((c) => c.id === selectedCategoryId) ?? null,
-    [categories, selectedCategoryId],
+  const triage = useMemo(
+    () =>
+      evaluateReportTriage({
+        areaKey,
+        issueId,
+        locationContext,
+        impactLevel,
+        duration,
+        categories,
+      }),
+    [areaKey, issueId, locationContext, impactLevel, duration, categories],
   );
+
+  const selectedCategory = triage.matchedCategory;
+  const selectedCategoryId = selectedCategory?.id ?? '';
+  const riskLevel = triage.computedRiskLevel;
+  const descripcion = triage.generatedDescription;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFile = e.target.files?.[0];
@@ -161,6 +225,10 @@ export default function ReportarFallaPage() {
           lng: pos.coords.longitude,
         });
         setGpsAccuracy(Math.round(pos.coords.accuracy));
+        void resolveAddressFromCoords(
+          pos.coords.latitude,
+          pos.coords.longitude,
+        );
       },
       () => {
         setAlertState({
@@ -177,9 +245,13 @@ export default function ReportarFallaPage() {
   const submitFinalReport = async () => {
     if (!fotoFile || !selectedCategoryId) return;
 
-    const fullAddress = referencia.trim()
-      ? `${direccion.trim()} (${referencia.trim()})`
-      : direccion.trim();
+    const effectiveAddress =
+      direccion.trim() ||
+      `Ubicación GPS (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}), Torreón, Coah.`;
+    const fullAddress =
+      referencia && referencia !== REFERENCE_SELECT_OPTIONS[0]
+        ? `${effectiveAddress} (${referencia})`
+        : effectiveAddress;
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       await enqueueOfflineReport({
@@ -241,13 +313,9 @@ export default function ReportarFallaPage() {
   const handleConfirmarUbicacion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!direccion.trim()) {
-      setAlertState({
-        open: true,
-        type: 'warning',
-        title: 'Dirección requerida',
-        message: 'Ingresa la calle o referencia de la ubicación de la falla.',
-      });
-      return;
+      setDireccion(
+        `Ubicación GPS (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}), Torreón, Coah.`,
+      );
     }
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -479,124 +547,383 @@ export default function ReportarFallaPage() {
               </section>
             </div>
 
-            <div className="lg:col-span-6 flex flex-col gap-4 lg:bg-white lg:border lg:border-[#dce4ed] lg:rounded-2xl lg:p-6 lg:shadow-xs">
-              {/* Selector estandarizado de Categoría (RF-03) */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="categorySelect"
-                  className="text-[14px] font-bold text-[#172b43]"
-                >
-                  Categoría de la falla <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  id="categorySelect"
-                  value={selectedCategoryId}
-                  onChange={(e) => setSelectedCategoryId(e.target.value)}
-                  className="w-full bg-white border border-[#dce4ed] focus:border-[#155ead] rounded-[12px] h-12 px-3.5 text-[13px] font-medium outline-none"
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.department?.code ? `[${cat.department.code}] ` : ''}
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedCategory && (
-                  <p className="text-[12px] text-[#5e7085]">
-                    {selectedCategory.description}
-                  </p>
-                )}
+            <div className="lg:col-span-6 flex flex-col gap-5 lg:bg-white lg:border lg:border-[#dce4ed] lg:rounded-2xl lg:p-6 lg:shadow-xs">
+              {/* Barra de progreso del cuestionario paso a paso */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold uppercase tracking-wider text-[#155ead]">
+                    {quizStep <= 5
+                      ? `Pregunta ${quizStep} de 5`
+                      : 'Diagnóstico completado'}
+                  </span>
+                  <span className="text-[#5e7085] font-medium">
+                    {quizStep <= 5 ? `${quizStep * 20}%` : '100%'}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-[#eaf0f7] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#155ead] rounded-full transition-all duration-300"
+                    style={{
+                      width: `${quizStep <= 5 ? quizStep * 20 : 100}%`,
+                    }}
+                  />
+                </div>
               </div>
 
-              {/* Nivel de Riesgo (RF-03 / 4.3.3) */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="riskSelect"
-                  className="text-[14px] font-bold text-[#172b43]"
-                >
-                  Nivel de riesgo percibido
-                </label>
-                <select
-                  id="riskSelect"
-                  value={riskLevel}
-                  onChange={(e) =>
-                    setRiskLevel(e.target.value as RiskLevelOption)
-                  }
-                  className="w-full bg-white border border-[#dce4ed] focus:border-[#155ead] rounded-[12px] h-12 px-3.5 text-[13px] font-medium outline-none"
-                >
-                  <option value="BAJO">Bajo — Molestia menor sin riesgo vial</option>
-                  <option value="MEDIO">Medio — Afectación moderada en banqueta o calle</option>
-                  <option value="ALTO">Alto — Riesgo de daño a vehículos o peatones</option>
-                  <option value="CRITICO">Crítico — Peligro inminente / emergencia urbana</option>
-                </select>
-              </div>
-
-              {/* Descripción */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="descInput"
-                  className="text-[14px] font-bold text-[#172b43]"
-                >
-                  Descripción del problema <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  id="descInput"
-                  rows={3}
-                  value={descripcion}
-                  onChange={(e) => setDescripcion(e.target.value)}
-                  placeholder="Describe brevemente qué está ocurriendo y si hay peligro para peatones o vehículos..."
-                  className="w-full bg-white border border-[#dce4ed] focus:border-[#155ead] rounded-[12px] p-3.5 text-[13px] outline-none resize-none"
-                />
-              </div>
-
-              {/* Dependencia detectada */}
-              {selectedCategory?.department && (
-                <div className="bg-[#edf5ff] border border-[#bfdbfe] rounded-[14px] px-4 py-3 flex items-center justify-between">
+              {/* PREGUNTA 1: Tipo general de situación */}
+              {quizStep === 1 && (
+                <div className="flex flex-col gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase text-[#155ead]">
-                      Dependencia asignada automáticamente
-                    </p>
-                    <p className="text-[14px] font-bold text-[#0e315a]">
-                      {selectedCategory.department.name}
-                    </p>
-                    <p className="text-[11px] text-[#5e7085]">
-                      SLA estimado: {selectedCategory.department.defaultSlaHours} horas
+                    <h2 className="text-[18px] font-bold text-[#0e315a] leading-snug">
+                      ¿Qué tipo de situación estás observando?
+                    </h2>
+                    <p className="text-xs text-[#5e7085] mt-1">
+                      Elige la opción más cercana; el sistema identificará
+                      automáticamente la dependencia correcta.
                     </p>
                   </div>
-                  <CircleCheck className="w-5 h-5 text-[#155ead] shrink-0" />
+                  <div className="flex flex-col gap-2.5">
+                    {PROBLEM_AREAS.map((area) => {
+                      const active = areaKey === area.key;
+                      return (
+                        <button
+                          key={area.key}
+                          type="button"
+                          onClick={() => {
+                            setAreaKey(area.key);
+                            setIssueId(TRIAGE_ISSUES_BY_AREA[area.key][0].id);
+                            setLocationContext(
+                              LOCATION_CONTEXT_BY_AREA[area.key].options[0],
+                            );
+                          }}
+                          className={`w-full text-left p-3.5 rounded-[14px] border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            active
+                              ? 'border-[#155ead] bg-[#edf5ff] shadow-2xs'
+                              : 'border-[#e3eaf2] bg-white hover:border-[#b7cce4] hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <span className="text-[13px] font-semibold text-[#172b43]">
+                            {area.label}
+                          </span>
+                          <span
+                            className={`size-5 rounded-full flex items-center justify-center shrink-0 border ${
+                              active
+                                ? 'bg-[#155ead] border-[#155ead] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {active && <Check className="size-3 stroke-[3]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (!fotoFile) {
-                    setAlertState({
-                      open: true,
-                      type: 'warning',
-                      title: 'Fotografía obligatoria',
-                      message:
-                        'Captura o adjunta una fotografía de la incidencia antes de continuar.',
-                    });
-                    return;
-                  }
-                  if (!selectedCategoryId || !descripcion.trim()) {
-                    setAlertState({
-                      open: true,
-                      type: 'warning',
-                      title: 'Completa los campos',
-                      message:
-                        'Selecciona una categoría y escribe una breve descripción.',
-                    });
-                    return;
-                  }
-                  setPaso(2);
-                }}
-                className="w-full h-[50px] bg-[#155ead] hover:bg-[#124d8f] text-white font-semibold text-[14px] rounded-[14px] flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
-              >
-                <ArrowRight className="w-4 h-4" />
-                <span>Siguiente: ubicación GPS</span>
-              </button>
+              {/* PREGUNTA 2: Detalle específico según el área elegida */}
+              {quizStep === 2 && (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h2 className="text-[18px] font-bold text-[#0e315a] leading-snug">
+                      {QUESTION_2_BY_AREA[areaKey]}
+                    </h2>
+                    <p className="text-xs text-[#5e7085] mt-1">
+                      Selecciona la opción que mejor describa lo que ves en el
+                      lugar.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {TRIAGE_ISSUES_BY_AREA[areaKey].map((item) => {
+                      const active = issueId === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setIssueId(item.id)}
+                          className={`w-full text-left p-3.5 rounded-[14px] border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                            active
+                              ? 'border-[#155ead] bg-[#edf5ff] shadow-2xs'
+                              : 'border-[#e3eaf2] bg-white hover:border-[#b7cce4] hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-[#172b43] leading-snug">
+                              {item.label}
+                            </p>
+                            <p className="text-[11px] text-[#5e7085] mt-0.5">
+                              {item.helper}
+                            </p>
+                          </div>
+                          <span
+                            className={`size-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 border ${
+                              active
+                                ? 'bg-[#155ead] border-[#155ead] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {active && <Check className="size-3 stroke-[3]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* PREGUNTA 3: Ubicación contextual según el área */}
+              {quizStep === 3 && (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h2 className="text-[18px] font-bold text-[#0e315a] leading-snug">
+                      {LOCATION_CONTEXT_BY_AREA[areaKey].question}
+                    </h2>
+                    <p className="text-xs text-[#5e7085] mt-1">
+                      Esto ayuda a la cuadrilla a llevar el equipo adecuado.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {LOCATION_CONTEXT_BY_AREA[areaKey].options.map((opt) => {
+                      const active = locationContext === opt;
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setLocationContext(opt)}
+                          className={`w-full text-left p-3.5 rounded-[14px] border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            active
+                              ? 'border-[#155ead] bg-[#edf5ff] shadow-2xs'
+                              : 'border-[#e3eaf2] bg-white hover:border-[#b7cce4] hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <span className="text-[13px] font-semibold text-[#172b43]">
+                            {opt}
+                          </span>
+                          <span
+                            className={`size-5 rounded-full flex items-center justify-center shrink-0 border ${
+                              active
+                                ? 'bg-[#155ead] border-[#155ead] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {active && <Check className="size-3 stroke-[3]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* PREGUNTA 4: Nivel de afectación o peligro */}
+              {quizStep === 4 && (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h2 className="text-[18px] font-bold text-[#0e315a] leading-snug">
+                      ¿Qué nivel de afectación o peligro representa?
+                    </h2>
+                    <p className="text-xs text-[#5e7085] mt-1">
+                      Nos permite priorizar emergencias urbanas de inmediato.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {IMPACT_LEVEL_OPTIONS.map((opt) => {
+                      const active = impactLevel === opt.value;
+                      const dotColor =
+                        opt.value === 'CRITICO'
+                          ? 'bg-rose-500'
+                          : opt.value === 'ALTO'
+                            ? 'bg-orange-500'
+                            : opt.value === 'MEDIO'
+                              ? 'bg-amber-400'
+                              : 'bg-emerald-500';
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setImpactLevel(opt.value)}
+                          className={`w-full text-left p-3.5 rounded-[14px] border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            active
+                              ? 'border-[#155ead] bg-[#edf5ff] shadow-2xs'
+                              : 'border-[#e3eaf2] bg-white hover:border-[#b7cce4] hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span
+                              className={`size-2.5 rounded-full shrink-0 ${dotColor}`}
+                            />
+                            <span className="text-[13px] font-semibold text-[#172b43]">
+                              {opt.label}
+                            </span>
+                          </div>
+                          <span
+                            className={`size-5 rounded-full flex items-center justify-center shrink-0 border ${
+                              active
+                                ? 'bg-[#155ead] border-[#155ead] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {active && <Check className="size-3 stroke-[3]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* PREGUNTA 5: Antigüedad del problema */}
+              {quizStep === 5 && (
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h2 className="text-[18px] font-bold text-[#0e315a] leading-snug">
+                      ¿Desde cuándo se presenta esta situación?
+                    </h2>
+                    <p className="text-xs text-[#5e7085] mt-1">
+                      Última pregunta para asignar tu reporte automáticamente.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {DURATION_OPTIONS.map((opt) => {
+                      const active = duration === opt;
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setDuration(opt)}
+                          className={`w-full text-left p-3.5 rounded-[14px] border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            active
+                              ? 'border-[#155ead] bg-[#edf5ff] shadow-2xs'
+                              : 'border-[#e3eaf2] bg-white hover:border-[#b7cce4] hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <span className="text-[13px] font-semibold text-[#172b43]">
+                            {opt}
+                          </span>
+                          <span
+                            className={`size-5 rounded-full flex items-center justify-center shrink-0 border ${
+                              active
+                                ? 'bg-[#155ead] border-[#155ead] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {active && <Check className="size-3 stroke-[3]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* RESUMEN FINAL (Step 6): Dependencia asignada automáticamente */}
+              {quizStep === 6 && (
+                <div className="flex flex-col gap-4">
+                  <div className="bg-[#edf5ff] border-2 border-[#bfdbfe] rounded-[16px] p-4 flex items-center gap-3.5">
+                    <DepartmentLogo code={triage.departmentCode} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#155ead]">
+                        Dependencia asignada automáticamente
+                      </p>
+                      <p className="text-[15px] font-bold text-[#0e315a] leading-snug mt-0.5">
+                        {selectedCategory?.department?.name ??
+                          (triage.departmentCode === 'SIM'
+                            ? 'Sistema Municipal de Aguas y Saneamiento (SIMAS)'
+                            : triage.departmentCode === 'OLA'
+                              ? 'Dirección de Limpieza Urbana y Espacios Públicos (La OLA)'
+                              : 'Dirección General de Obras Públicas y Bacheo')}
+                      </p>
+                      <p className="text-[11px] text-[#5e7085] mt-1">
+                        Prioridad: <strong>{riskLevel}</strong> · SLA estimado:{' '}
+                        {selectedCategory?.department?.defaultSlaHours ?? 24}{' '}
+                        horas
+                      </p>
+                    </div>
+                    <CircleCheck className="w-6 h-6 text-[#155ead] shrink-0" />
+                  </div>
+
+                  <div className="bg-[#f8fafd] border border-[#e3eaf2] rounded-xl p-3.5 text-xs text-[#3c5068] space-y-1.5">
+                    <p className="text-[11px] font-bold uppercase text-[#5e7085]">
+                      Resumen automático de tu reporte
+                    </p>
+                    <p>
+                      <strong>Problema:</strong> {triage.issue.label}
+                    </p>
+                    <p>
+                      <strong>Ubicación en sitio:</strong> {locationContext}
+                    </p>
+                    <p>
+                      <strong>Antigüedad:</strong> {duration}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Botones de navegación del cuestionario */}
+              <div className="flex items-center gap-2.5 pt-1">
+                {quizStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuizStep((prev) =>
+                        prev > 1 ? ((prev - 1) as 1 | 2 | 3 | 4 | 5 | 6) : 1,
+                      )
+                    }
+                    className="h-[48px] px-4 rounded-[14px] border border-[#dce4ed] bg-white hover:bg-slate-50 text-[#172b43] font-semibold text-[13px] flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>{quizStep === 6 ? 'Editar' : 'Anterior'}</span>
+                  </button>
+                )}
+
+                {quizStep <= 5 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuizStep((prev) =>
+                        prev < 6 ? ((prev + 1) as 1 | 2 | 3 | 4 | 5 | 6) : 6,
+                      )
+                    }
+                    className="flex-1 h-[48px] bg-[#155ead] hover:bg-[#124d8f] text-white font-semibold text-[14px] rounded-[14px] flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <span>
+                      {quizStep === 5 ? 'Ver dependencia asignada' : 'Continuar'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!fotoFile) {
+                        setAlertState({
+                          open: true,
+                          type: 'warning',
+                          title: 'Fotografía obligatoria',
+                          message:
+                            'Captura o adjunta una fotografía de la incidencia antes de continuar.',
+                        });
+                        return;
+                      }
+                      if (!selectedCategoryId) {
+                        setAlertState({
+                          open: true,
+                          type: 'warning',
+                          title: 'Catálogo aún cargando',
+                          message:
+                            'Espera un segundo mientras se sincronizan las categorías con el servidor.',
+                        });
+                        return;
+                      }
+                      setPaso(2);
+                    }}
+                    className="flex-1 h-[48px] bg-[#155ead] hover:bg-[#124d8f] text-white font-semibold text-[14px] rounded-[14px] flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>Siguiente: ubicación GPS</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -623,12 +950,16 @@ export default function ReportarFallaPage() {
                 heightClass="h-[300px] sm:h-[360px] lg:h-[440px]"
                 selectablePin={coords}
                 pinRadiusMeters={50}
+                showSearchBar
+                searchPlaceholder="Buscar calle o colonia donde está la falla..."
                 showLocateButton
                 onLocateClick={handleCenterGps}
                 onPinChange={(lat, lng, resolvedAddress) => {
                   setCoords({ lat, lng });
-                  if (resolvedAddress && !direccion) {
+                  if (resolvedAddress) {
                     setDireccion(resolvedAddress);
+                  } else {
+                    void resolveAddressFromCoords(lat, lng);
                   }
                 }}
               />
@@ -656,41 +987,41 @@ export default function ReportarFallaPage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <label
-                  htmlFor="direccion"
-                  className="text-[13px] font-bold text-[#172b43]"
-                >
-                  Dirección o cruce <span className="text-rose-500">*</span>
+                <label className="text-[13px] font-bold text-[#172b43]">
+                  Ubicación detectada en el mapa
                 </label>
-                <div className="bg-white border border-[#dce4ed] rounded-[12px] h-[48px] px-3.5 flex items-center gap-2.5 focus-within:border-[#155ead]">
-                  <MapPin className="w-4 h-4 text-[#5e7085] shrink-0" />
-                  <input
-                    id="direccion"
-                    type="text"
-                    required
-                    value={direccion}
-                    onChange={(e) => setDireccion(e.target.value)}
-                    placeholder="Ej. Av. Juárez y Calz. Colón, Col. Centro"
-                    className="w-full bg-transparent text-[13px] text-[#172b43] outline-none"
-                  />
+                <div className="bg-[#f8fafd] border border-[#dce4ed] rounded-[12px] min-h-[48px] px-3.5 py-2.5 flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-[#155ead] shrink-0" />
+                  <span className="text-[13px] text-[#172b43] leading-snug">
+                    {direccion ||
+                      `Ubicación GPS (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}), Torreón, Coah.`}
+                  </span>
                 </div>
+                <p className="text-[11px] text-[#5e7085]">
+                  Usa el buscador del mapa o toca el punto exacto para actualizar
+                  esta dirección automáticamente.
+                </p>
               </div>
 
               <div className="flex flex-col gap-2">
                 <label
-                  htmlFor="referencia"
+                  htmlFor="referenciaSelect"
                   className="text-[13px] font-bold text-[#172b43]"
                 >
-                  Referencia adicional (opcional)
+                  Referencia visual cercana
                 </label>
-                <input
-                  id="referencia"
-                  type="text"
+                <select
+                  id="referenciaSelect"
                   value={referencia}
                   onChange={(e) => setReferencia(e.target.value)}
-                  placeholder="Ej. Frente a farmacia, esquina norte"
-                  className="w-full bg-white border border-[#dce4ed] rounded-[12px] h-[48px] px-3.5 text-[13px] text-[#172b43] focus:border-[#155ead] outline-none"
-                />
+                  className="w-full bg-white border border-[#dce4ed] rounded-[12px] h-[48px] px-3.5 text-[13px] font-medium text-[#172b43] focus:border-[#155ead] outline-none"
+                >
+                  {REFERENCE_SELECT_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="bg-[#f3f6fa] rounded-xl p-3 text-[12px] text-[#5e7085] flex items-start gap-2">

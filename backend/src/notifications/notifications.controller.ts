@@ -19,13 +19,23 @@ export class NotificationsController {
     return this.notificationsService.listForUser(user);
   }
 
+  @Patch('read-all')
+  markAllRead(@CurrentUser() user: AuthenticatedUser) {
+    return this.notificationsService.markAllAsRead(user);
+  }
+
+  @Patch('clear')
+  clearAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.notificationsService.clearAll(user);
+  }
+
   @Patch(':id/read')
   markRead(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.notificationsService.markAsRead(id, user);
   }
 
-  @Patch('read-all')
-  markAllRead(@CurrentUser() user: AuthenticatedUser) {
-    return this.notificationsService.markAllAsRead(user);
+  @Patch(':id/dismiss')
+  dismissOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.notificationsService.dismissOne(id, user);
   }
 }

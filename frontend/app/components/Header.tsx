@@ -48,7 +48,17 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="w-full bg-[#0e315a] text-white shadow-md shrink-0 sticky top-0 z-30">
       <div className="max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-10 h-16 sm:h-[74px] flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={() => {
+            onSelectSection('kanban');
+            if (typeof window !== 'undefined') {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+          }}
+          title="Ir al inicio del panel"
+          className="flex items-center gap-2.5 sm:gap-3 min-w-0 text-left hover:opacity-90 transition-opacity cursor-pointer"
+        >
           {activeDeptCode ? (
             <DepartmentLogo
               code={activeDeptCode}
@@ -66,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
               Centro de atención y operación urbana · Torreón
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Section Tabs */}
         <nav className="hidden lg:flex items-center bg-black/25 p-1 rounded-xl border border-white/10 shrink-0">

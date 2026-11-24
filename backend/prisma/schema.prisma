@@ -32,6 +32,7 @@ model Department {
   categories      ReportCategory[]
   incidentReports IncidentReport[]
   fieldCrews      FieldCrew[]
+  workers         DepartmentWorker[]
   notifications   Notification[]
 
   @@map("departments")
@@ -58,6 +59,7 @@ model User {
   statusHistoryChanges ReportStatusHistory[]
   ledFieldCrews        FieldCrew[]
   notifications        Notification[]
+  notificationReads    NotificationRead[]
 
   @@map("users")
 }
@@ -134,12 +136,32 @@ model FieldCrew {
   isActive        Boolean                                 @default(true) @map("is_active")
   leaderUserId    String                                  @map("leader_user_id") @db.Uuid
 
-  department Department  @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
-  leaderUser User        @relation(fields: [leaderUserId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  department Department         @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  leaderUser User               @relation(fields: [leaderUserId], references: [id], onUpdate: Cascade, onDelete: Restrict)
   workOrders WorkOrder[]
+  workers    DepartmentWorker[]
 
   @@index([coveragePolygon], type: Gist, map: "idx_field_crews_coverage_gist")
   @@map("field_crews")
+}
+
+model DepartmentWorker {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId String   @map("department_id") @db.Uuid
+  crewId       String?  @map("crew_id") @db.Uuid
+  employeeCode String   @unique @map("employee_code") @db.VarChar(30)
+  firstName    String   @map("first_name") @db.VarChar(100)
+  lastName     String   @map("last_name") @db.VarChar(100)
+  phone        String?  @db.VarChar(20)
+  position     String   @db.VarChar(100)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  department Department @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  crew       FieldCrew? @relation(fields: [crewId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+
+  @@index([departmentId, crewId], map: "idx_department_workers_dept_crew")
+  @@map("department_workers")
 }
 
 model WorkOrder {
@@ -199,11 +221,27 @@ model Notification {
   isRead       Boolean  @default(false) @map("is_read")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  user       User?           @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  department Department?     @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Cascade)
-  report     IncidentReport? @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  user       User?              @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  department Department?        @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  report     IncidentReport?    @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  reads      NotificationRead[]
 
   @@index([userId, isRead, createdAt(sort: Desc)], map: "idx_notifications_user_read")
   @@index([departmentId, isRead, createdAt(sort: Desc)], map: "idx_notifications_dept_read")
   @@map("notifications")
+}
+
+model NotificationRead {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  readAt         DateTime  @default(now()) @map("read_at") @db.Timestamptz()
+  dismissedAt    DateTime? @map("dismissed_at") @db.Timestamptz()
+
+  notification Notification @relation(fields: [notificationId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([notificationId, userId], map: "uq_notification_read_user")
+  @@index([userId, dismissedAt], map: "idx_notification_reads_user_dismissed")
+  @@map("notification_reads")
 }

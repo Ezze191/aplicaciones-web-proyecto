@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -31,15 +32,17 @@ export class CreateCrewDto {
   @IsUUID('4', { message: 'El ID de dependencia debe ser un UUID válido.' })
   departmentId?: string;
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(3, {
-    message: 'Debes definir al menos 3 puntos en el mapa para delimitar la zona de cobertura.',
+    message:
+      'Si delimitas una zona en el mapa debes marcar al menos 3 puntos.',
   })
   @ValidateNested({ each: true })
   @Type(() => PolygonPointDto)
-  polygonCoordinates!: PolygonPointDto[];
+  polygonCoordinates?: PolygonPointDto[];
 
-  // Datos para crear las credenciales del jefe de cuadrilla
+  // Datos para crear las credenciales del jefe de cuadrilla / operador
   @IsString()
   @IsNotEmpty({ message: 'El nombre del responsable es obligatorio.' })
   @MaxLength(100)
@@ -50,8 +53,18 @@ export class CreateCrewDto {
   @MaxLength(100)
   leaderLastName!: string;
 
+  /** Nombre de usuario (antes del @). El dominio se bloquea automáticamente según la dependencia. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z0-9._-]{2,64}$/, {
+    message:
+      'El nombre de usuario solo puede contener letras, números, puntos, guiones y guion bajo.',
+  })
+  leaderUsername?: string;
+
+  @IsOptional()
   @IsEmail({}, { message: 'Ingresa un correo válido para el acceso de campo.' })
-  leaderEmail!: string;
+  leaderEmail?: string;
 
   @IsOptional()
   @IsString()
@@ -60,8 +73,21 @@ export class CreateCrewDto {
 
   @IsString()
   @MinLength(8, {
-    message: 'La contraseña de acceso de campo debe tener al menos 8 caracteres.',
+    message:
+      'La contraseña de acceso de campo debe tener al menos 8 caracteres.',
   })
   @MaxLength(72)
   leaderPassword!: string;
+
+  /** IDs de trabajadores pre-registrados en department_workers para asignar a la flotilla */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  workerIds?: string[];
+}
+
+export class AssignCrewWorkersDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  workerIds!: string[];
 }

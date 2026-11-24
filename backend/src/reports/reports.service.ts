@@ -16,6 +16,7 @@ import { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { isWithinTorreonJurisdiction } from '../common/utils/geo.util';
 import { FieldCrewEntity } from '../crews/entities/field-crew.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { CheckDuplicatesDto } from './dto/check-duplicates.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { QueryReportsDto } from './dto/query-reports.dto';
@@ -144,6 +145,7 @@ export class ReportsService {
     @InjectRepository(UserEntity)
     private readonly usersRepo: Repository<UserEntity>,
     private readonly notificationsService: NotificationsService,
+    private readonly storageService: StorageService,
   ) {}
 
   async checkDuplicates(dto: CheckDuplicatesDto) {
@@ -250,6 +252,12 @@ export class ReportsService {
       department.code,
     );
 
+    const organizedImageUrl = await this.storageService.moveEvidenceToReportFolio(
+      dto.imageUrl,
+      folio,
+      'antes',
+    );
+
     const riskLevel: RiskLevel =
       dto.riskLevel ??
       (category.priorityWeight >= 5
@@ -294,7 +302,7 @@ export class ReportsService {
         INSERT INTO photographic_evidences (report_id, stage, image_url, capture_coords)
         VALUES ($1, 'ANTES', $2, ST_SetSRID(ST_MakePoint($3, $4), 4326))
         `,
-        [reportId, dto.imageUrl.trim(), dto.lng, dto.lat],
+        [reportId, organizedImageUrl, dto.lng, dto.lat],
       );
 
       if (user?.id) {
@@ -708,11 +716,30 @@ export class ReportsService {
     const refreshed = await this.reportsRepo.findOne({
       where: { id: reportId },
     });
+    const totalUpvotes = refreshed?.upvotesCount ?? report.upvotesCount + 1;
+
+    await this.notificationsService.createInApp({
+      departmentId: report.departmentId,
+      reportId: report.id,
+      title: `Confirmación vecinal · ${report.folio}`,
+      message: `El reporte acumuló ${totalUpvotes} confirmaciones ("Sigue ahí") en ${report.addressReference}.`,
+      type: 'REPORT_UPVOTE',
+    });
+
+    if (report.citizenId && report.citizenId !== user?.id) {
+      await this.notificationsService.createInApp({
+        userId: report.citizenId,
+        reportId: report.id,
+        title: `Respaldo vecinal · ${report.folio}`,
+        message: `Un vecino confirmó tu reporte ("Sigue ahí"). Total: ${totalUpvotes} confirmaciones.`,
+        type: 'REPORT_UPVOTE',
+      });
+    }
 
     return {
       message: 'Confirmación vecinal registrada (+1).',
       reportId,
-      upvotesCount: refreshed?.upvotesCount ?? report.upvotesCount + 1,
+      upvotesCount: totalUpvotes,
     };
   }
 
@@ -822,6 +849,14 @@ export class ReportsService {
       });
     }
 
+    await this.notificationsService.createInApp({
+      departmentId: report.departmentId,
+      reportId: report.id,
+      title: `Asignado · ${report.folio}`,
+      message: `Asignado a ${crew.name} por ${user.firstName} ${user.lastName}.`,
+      type: 'REPORT_ASSIGNED',
+    });
+
     const updated = await this.getReportViewById(report.id);
     return updated!;
   }
@@ -883,6 +918,14 @@ export class ReportsService {
       });
     }
 
+    await this.notificationsService.createInApp({
+      departmentId: report.departmentId,
+      reportId: report.id,
+      title: `Reporte rechazado · ${report.folio}`,
+      message: `Rechazado por ${user.firstName} ${user.lastName}: ${dto.reason.trim()}`,
+      type: 'REPORT_REJECTED',
+    });
+
     const updated = await this.getReportViewById(report.id);
     return updated!;
   }
@@ -936,6 +979,24 @@ export class ReportsService {
           dto.notes?.trim() || `Estado actualizado a ${dto.status} desde Backoffice.`,
         ],
       );
+    });
+
+    if (report.citizenId) {
+      await this.notificationsService.createInApp({
+        userId: report.citizenId,
+        reportId: report.id,
+        title: `Actualización · ${report.folio}`,
+        message: `El estatus de tu reporte cambió de ${prevStatus} a ${dto.status}.`,
+        type: 'STATUS_CHANGE',
+      });
+    }
+
+    await this.notificationsService.createInApp({
+      departmentId: report.departmentId,
+      reportId: report.id,
+      title: `Cambio de estado · ${report.folio}`,
+      message: `Movido a ${dto.status} por ${user.firstName} ${user.lastName}.`,
+      type: 'STATUS_CHANGE',
     });
 
     const updated = await this.getReportViewById(report.id);

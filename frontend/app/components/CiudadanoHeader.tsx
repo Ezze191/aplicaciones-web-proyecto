@@ -64,6 +64,15 @@ export function CiudadanoHeader({ userOverride }: CiudadanoHeaderProps) {
 
           <Link
             href="/dashboard-ciudadano"
+            onClick={() => {
+              if (
+                pathname === '/dashboard-ciudadano' &&
+                typeof window !== 'undefined'
+              ) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }}
+            title="Ir al inicio del portal ciudadano"
             className="flex items-center gap-2.5 hover:opacity-90 transition-opacity"
           >
             <SiuLogo variant="dark" />
