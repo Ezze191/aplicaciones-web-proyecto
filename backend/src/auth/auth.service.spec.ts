@@ -4,6 +4,12 @@ jest.mock('@nestjs/typeorm', () => ({
 jest.mock('@nestjs/config', () => ({
   ConfigService: class ConfigService {},
 }));
+jest.mock('@nestjs/jwt', () => ({
+  JwtService: class {},
+}));
+jest.mock('../notifications/notifications.service', () => ({
+  NotificationsService: class {},
+}));
 
 import {
   ConflictException,
@@ -15,6 +21,10 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { UserRole } from './constants/roles.constants';
+import {
+  isInstitutionalDomain,
+  resolveInstitutionalDomain,
+} from './domain-routing.util';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { DepartmentEntity } from './entities/department.entity';
@@ -85,9 +95,13 @@ describe('AuthService', () => {
       create: jest.fn((data: Partial<UserEntity>) => ({
         id: 'user-uuid-1',
         createdAt: new Date('2026-11-17T00:00:00Z'),
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         ...data,
       })),
       save: jest.fn((user: UserEntity) => Promise.resolve(user)),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     const rolesRepo = {
@@ -112,6 +126,10 @@ describe('AuthService', () => {
     const service = new AuthService(
       usersRepo as never,
       rolesRepo as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       jwtTokenService,
     );
 
@@ -147,7 +165,7 @@ describe('AuthService', () => {
         (result.user as unknown as Record<string, unknown>).passwordHash,
       ).toBeUndefined();
 
-      const decoded = jwtTokenService.verify(result.accessToken);
+      const decoded = jwtTokenService.verify(result.accessToken!);
       expect(decoded.sub).toBe('user-uuid-1');
       expect(decoded.role).toBe(UserRole.CITIZEN);
       expect(decoded.permissions).toEqual(citizenRole.permissions);
@@ -168,6 +186,21 @@ describe('AuthService', () => {
         InternalServerErrorException,
       );
     });
+
+    it('blocks public web registration for institutional domains', async () => {
+      const { service } = makeService();
+
+      await expect(
+        service.register({ ...registerDto, email: 'jesus@simas.com.mx' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      await expect(
+        service.register({
+          ...registerDto,
+          email: 'roberto@operador.laola.com.mx',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 
   describe('login', () => {
@@ -185,6 +218,9 @@ describe('AuthService', () => {
         departmentId: null,
         department: null,
         isActive: true,
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         createdAt: new Date('2026-11-17T00:00:00Z'),
       };
 
@@ -196,7 +232,6 @@ describe('AuthService', () => {
 
       const result = await service.login(dto);
 
-      expect(result.message).toBe('Inicio de sesión exitoso.');
       expect(result.redirectTo).toBe('/dashboard-ciudadano');
       expect(result.user.role).toBe(UserRole.CITIZEN);
       expect(result.user.roleLabel).toBe('Ciudadano');
@@ -217,6 +252,9 @@ describe('AuthService', () => {
         departmentId: simasDepartment.id,
         department: simasDepartment,
         isActive: true,
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         createdAt: new Date('2026-11-17T00:00:00Z'),
       };
 
@@ -246,6 +284,9 @@ describe('AuthService', () => {
         departmentId: null,
         department: null,
         isActive: true,
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         createdAt: new Date('2026-11-17T00:00:00Z'),
       };
 
@@ -283,6 +324,9 @@ describe('AuthService', () => {
         departmentId: null,
         department: null,
         isActive: true,
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         createdAt: new Date('2026-11-17T00:00:00Z'),
       };
 
@@ -393,6 +437,9 @@ describe('AuthService', () => {
           departmentId: simasDepartment.id,
           department: simasDepartment,
           isActive: true,
+          activeSessionId: null,
+          resetToken: null,
+          resetTokenExpiresAt: null,
           createdAt: new Date('2026-11-17T00:00:00Z'),
         },
       });
@@ -402,7 +449,7 @@ describe('AuthService', () => {
         password: 'Torreon2026!',
       });
       const payload = service.validateTokenAndSession(loginRes.accessToken);
-      const logoutRes = service.logout(payload);
+      const logoutRes = await service.logout(payload);
 
       expect(logoutRes.message).toBe('Sesión cerrada correctamente.');
       expect(() =>
@@ -423,6 +470,9 @@ describe('AuthService', () => {
         departmentId: simasDepartment.id,
         department: simasDepartment,
         isActive: true,
+        activeSessionId: null,
+        resetToken: null,
+        resetTokenExpiresAt: null,
         createdAt: new Date('2026-11-17T00:00:00Z'),
       };
 
@@ -442,23 +492,23 @@ describe('AuthService', () => {
       });
 
       const payload = jwtTokenService.verify(accessToken);
-      const profile = await service.getProfile(payload);
+      const profile = await service.getProfileWithRedirect(payload);
 
       expect(profile.redirectTo).toBe('/dashboard-admins');
       expect(profile.user.roleLabel).toBe('Supervisor');
       expect(profile.user.department?.code).toBe('SIM');
 
       const { service: missingService } = makeService({ existingUser: null });
-      await expect(missingService.getProfile(payload)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        missingService.getProfileWithRedirect(payload),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
 
       const { service: inactiveService } = makeService({
         existingUser: { ...supervisorUser, isActive: false },
       });
-      await expect(inactiveService.getProfile(payload)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        inactiveService.getProfileWithRedirect(payload),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('lists available roles with normalized labels and permissions', async () => {
@@ -472,5 +522,47 @@ describe('AuthService', () => {
         permissions: ['*'],
       });
     });
+  });
+
+  it('resolves institutional admin and operator domains regardless of username', () => {
+    expect(resolveInstitutionalDomain('jesus@simas.com.mx')).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'SIM',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('roberto@operador.simas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'SIM',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(resolveInstitutionalDomain('admin@laola.com.mx')).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'OLA',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('operador@operador.laola.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'OLA',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(
+      resolveInstitutionalDomain('admin@obraspublicas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_SUPERVISOR',
+      departmentCode: 'OBP',
+      redirectTo: '/dashboard-admins',
+    });
+    expect(
+      resolveInstitutionalDomain('operador@operador.obraspublicas.com.mx'),
+    ).toMatchObject({
+      roleName: 'ROLE_CREW',
+      departmentCode: 'OBP',
+      redirectTo: '/dashboard-tecnicos',
+    });
+    expect(isInstitutionalDomain('ciudadano@gmail.com')).toBe(false);
   });
 });

@@ -15,14 +15,17 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
-import { SiuLogo } from '../components/SiuLogo';
-import { AlertType, SweetAlert, showSuccessAlert } from '../components/SweetAlert';
-import { getBackendUrl } from '../lib/api';
-import { getDashboardPath, saveSession } from '../lib/session';
 import { useRouter } from 'next/navigation';
+import { AppLoader } from '../components/AppLoader';
+import { DepartmentLogo } from '../components/DepartmentLogo';
+import { SiuLogo } from '../components/SiuLogo';
+import { AlertType, SweetAlert } from '../components/SweetAlert';
+import { AuthUser, getBackendUrl } from '../lib/api';
+import { saveSession, useRedirectIfAuthenticated } from '../lib/auth';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { checkingSession } = useRedirectIfAuthenticated();
   const [formData, setFormData] = useState({
     firstName: '',
     lastNamePaterno: '',
@@ -121,20 +124,33 @@ export default function RegisterPage() {
         return;
       }
 
-      saveSession({
-        accessToken: data.accessToken,
-        expiresAt: data.expiresAt,
-        redirectTo: data.redirectTo,
-        user: data.user,
-      });
+      if (data?.accessToken && data?.user) {
+        saveSession(
+          data.accessToken as string,
+          data.user as AuthUser,
+          typeof data.expiresAt === 'string' ? data.expiresAt : undefined,
+        );
+        router.replace('/dashboard-ciudadano');
+        return;
+      }
 
-      await showSuccessAlert(
+      openAlert(
+        'success',
         data?.message ||
-          '¡Registro exitoso! Tu cuenta ciudadana ha sido creada correctamente.',
+        '¡Registro exitoso! Tu cuenta ciudadana ha sido creada correctamente.',
         '¡Cuenta creada!',
       );
-      router.replace(getDashboardPath(data.user.role));
-      return;
+
+      setFormData({
+        firstName: '',
+        lastNamePaterno: '',
+        lastNameMaterno: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+        acceptTerms: false,
+      });
     } catch {
       openAlert(
         'error',
@@ -145,6 +161,15 @@ export default function RegisterPage() {
       setIsLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <AppLoader
+        title="Verificando sesión activa..."
+        subtitle="Si ya tienes una sesión iniciada te llevaremos a tu panel"
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f3f6fa] flex flex-col font-sans text-slate-800">
@@ -200,11 +225,20 @@ export default function RegisterPage() {
           </div>
 
           <div className="mt-8 pt-6 border-t border-white/15">
-            <p className="text-xs text-[#afcef0] mb-2 font-medium">Dependencias integradas:</p>
-            <div className="flex items-center gap-4 text-xs font-semibold text-white/90">
-              <span className="flex items-center gap-1.5"> SIMAS</span>
-              <span className="flex items-center gap-1.5"> LA OLA</span>
-              <span className="flex items-center gap-1.5"> Obras Públicas</span>
+            <p className="text-xs text-[#afcef0] mb-3 font-medium">Dependencias integradas:</p>
+            <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold text-white/95">
+              <span className="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-xl px-2.5 py-1.5">
+                <DepartmentLogo code="SIM" size="xs" />
+                <span>SIMAS</span>
+              </span>
+              <span className="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-xl px-2.5 py-1.5">
+                <DepartmentLogo code="OLA" size="xs" />
+                <span>La OLA</span>
+              </span>
+              <span className="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-xl px-2.5 py-1.5">
+                <DepartmentLogo code="OBP" size="xs" />
+                <span>Obras Públicas</span>
+              </span>
             </div>
           </div>
         </section>

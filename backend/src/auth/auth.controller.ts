@@ -7,6 +7,15 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  type AuthenticatedUser,
+  CurrentUser,
+} from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import {
   AuthService,
   AuthUserSummary,
@@ -14,15 +23,16 @@ import {
   RegisterResponse,
   RoleSummary,
 } from './auth.service';
-import { RoleLabel, UserRole } from './constants/roles.constants';
-import { CurrentUser } from './decorators/current-user.decorator';
-import { Public } from './decorators/public.decorator';
-import { Roles } from './decorators/roles.decorator';
+import {
+  getRoleLabel,
+  normalizeRoleName,
+  RoleLabel,
+  UserRole,
+} from './constants/roles.constants';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
-import type { JwtPayload } from './jwt-token.service';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 export interface RbacVerificationResponse {
   message: string;
@@ -32,10 +42,11 @@ export interface RbacVerificationResponse {
     email: string;
     role: UserRole;
     roleLabel: RoleLabel;
-    departmentCode: string | null;
+    departmentId: string | null;
   };
 }
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -54,40 +65,47 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(@CurrentUser() user: JwtPayload): { message: string } {
-    return this.authService.logout(user);
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ message: string }> {
+    return this.authService.logout(user.id);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@CurrentUser() user: AuthenticatedUser): Promise<AuthUserSummary> {
+    return this.authService.getProfile(user.id);
+  }
+
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('profile')
   async getProfile(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ user: AuthUserSummary; redirectTo: string }> {
-    return this.authService.getProfile(user);
+    return this.authService.getProfileWithRedirect(user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('me')
-  async getMe(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<{ user: AuthUserSummary; redirectTo: string }> {
-    return this.authService.getProfile(user);
-  }
-
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Admin', 'Supervisor')
+  @Roles('ROLE_ADMIN', 'ROLE_SUPERVISOR')
   @Get('roles')
   async listRoles(): Promise<RoleSummary[]> {
     return this.authService.listRoles();
   }
 
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Admin', 'Supervisor')
+  @Roles('ROLE_ADMIN', 'ROLE_SUPERVISOR')
   @Get('rbac/admin')
-  verifyAdminAccess(@CurrentUser() user: JwtPayload): RbacVerificationResponse {
+  verifyAdminAccess(
+    @CurrentUser() user: AuthenticatedUser,
+  ): RbacVerificationResponse {
     return this.buildRbacVerificationResponse(
       'admin',
       'Acceso RBAC autorizado para panel Administrativo / Supervisión.',
@@ -95,10 +113,13 @@ export class AuthController {
     );
   }
 
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Cuadrilla', 'Admin')
+  @Roles('ROLE_CREW', 'ROLE_ADMIN')
   @Get('rbac/cuadrilla')
-  verifyCrewAccess(@CurrentUser() user: JwtPayload): RbacVerificationResponse {
+  verifyCrewAccess(
+    @CurrentUser() user: AuthenticatedUser,
+  ): RbacVerificationResponse {
     return this.buildRbacVerificationResponse(
       'cuadrilla',
       'Acceso RBAC autorizado para operaciones de Cuadrilla en campo.',
@@ -106,11 +127,12 @@ export class AuthController {
     );
   }
 
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('Ciudadano', 'Admin')
+  @Roles('ROLE_CITIZEN', 'ROLE_ADMIN')
   @Get('rbac/ciudadano')
   verifyCitizenAccess(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
   ): RbacVerificationResponse {
     return this.buildRbacVerificationResponse(
       'ciudadano',
@@ -119,20 +141,35 @@ export class AuthController {
     );
   }
 
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
   private buildRbacVerificationResponse(
     scope: string,
     message: string,
-    user: JwtPayload,
+    user: AuthenticatedUser,
   ): RbacVerificationResponse {
+    const normalizedRole = normalizeRoleName(user.role) ?? UserRole.CITIZEN;
     return {
       message,
       scope,
       user: {
-        id: user.sub,
+        id: user.id,
         email: user.email,
-        role: user.role,
-        roleLabel: user.roleLabel,
-        departmentCode: user.departmentCode,
+        role: normalizedRole,
+        roleLabel: getRoleLabel(normalizedRole),
+        departmentId: user.departmentId,
       },
     };
   }

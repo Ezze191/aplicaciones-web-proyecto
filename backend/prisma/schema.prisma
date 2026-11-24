@@ -1,0 +1,247 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, postgis]
+}
+
+model Role {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String @unique @db.VarChar(50)
+  description String @db.VarChar(255)
+  permissions Json   @default("[]") @db.JsonB
+
+  users User[]
+
+  @@map("roles")
+}
+
+model Department {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code            String @unique @db.VarChar(10)
+  name            String @db.VarChar(150)
+  iconName        String @map("icon_name") @db.VarChar(50)
+  colorHex        String @map("color_hex") @db.VarChar(7)
+  defaultSlaHours Int    @default(48) @map("default_sla_hours")
+
+  users           User[]
+  categories      ReportCategory[]
+  incidentReports IncidentReport[]
+  fieldCrews      FieldCrew[]
+  workers         DepartmentWorker[]
+  notifications   Notification[]
+
+  @@map("departments")
+}
+
+model User {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String    @unique @db.VarChar(255)
+  passwordHash        String    @map("password_hash") @db.VarChar(255)
+  firstName           String    @map("first_name") @db.VarChar(100)
+  lastName            String    @map("last_name") @db.VarChar(100)
+  phone               String?   @db.VarChar(20)
+  roleId              String    @map("role_id") @db.Uuid
+  departmentId        String?   @map("department_id") @db.Uuid
+  isActive            Boolean   @default(true) @map("is_active")
+  activeSessionId     String?   @map("active_session_id") @db.VarChar(255)
+  resetToken          String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpiresAt DateTime? @map("reset_token_expires_at") @db.Timestamptz()
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  role                 Role                  @relation(fields: [roleId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  department           Department?           @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  incidentReports      IncidentReport[]      @relation("CitizenReports")
+  statusHistoryChanges ReportStatusHistory[]
+  ledFieldCrews        FieldCrew[]
+  notifications        Notification[]
+  notificationReads    NotificationRead[]
+
+  @@map("users")
+}
+
+model ReportCategory {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId   String @map("department_id") @db.Uuid
+  name           String @db.VarChar(100)
+  description    String @db.VarChar(255)
+  priorityWeight Int    @default(1) @map("priority_weight")
+
+  department      Department       @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  incidentReports IncidentReport[]
+
+  @@unique([departmentId, name], map: "uq_category_dept_name")
+  @@map("report_categories")
+}
+
+model IncidentReport {
+  id               String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  folio            String                                @unique @db.VarChar(25)
+  citizenId        String?                               @map("citizen_id") @db.Uuid
+  departmentId     String                                @map("department_id") @db.Uuid
+  categoryId       String                                @map("category_id") @db.Uuid
+  riskLevel        String                                @default("MEDIO") @map("risk_level") @db.VarChar(20)
+  currentStatus    String                                @default("REGISTRADO") @map("current_status") @db.VarChar(25)
+  locationGeom     Unsupported("geometry(Point, 4326)")  @map("location_geom")
+  addressReference String                                @map("address_reference") @db.VarChar(255)
+  description      String                                @db.Text
+  upvotesCount     Int                                   @default(1) @map("upvotes_count")
+  masterReportId   String?                               @map("master_report_id") @db.Uuid
+  createdAt        DateTime                              @default(now()) @map("created_at") @db.Timestamptz()
+  resolvedAt       DateTime?                             @map("resolved_at") @db.Timestamptz()
+
+  citizen               User?                  @relation("CitizenReports", fields: [citizenId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  department            Department             @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  category              ReportCategory         @relation(fields: [categoryId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  masterReport          IncidentReport?        @relation("MasterDuplicates", fields: [masterReportId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  duplicateReports      IncidentReport[]       @relation("MasterDuplicates")
+  statusHistory         ReportStatusHistory[]
+  workOrders            WorkOrder[]
+  citizenUpvotes        CitizenUpvote[]
+  photographicEvidences PhotographicEvidence[]
+  notifications         Notification[]
+
+  @@index([locationGeom], type: Gist, map: "idx_incident_reports_location_gist")
+  @@index([folio], map: "idx_incident_reports_folio")
+  @@index([currentStatus, departmentId], map: "idx_incident_reports_status_dept")
+  @@index([createdAt(sort: Desc)], map: "idx_incident_reports_created_at")
+  @@map("incident_reports")
+}
+
+model ReportStatusHistory {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId        String   @map("report_id") @db.Uuid
+  previousStatus  String   @map("previous_status") @db.VarChar(25)
+  newStatus       String   @map("new_status") @db.VarChar(25)
+  changedByUserId String   @map("changed_by_user_id") @db.Uuid
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  report        IncidentReport @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  changedByUser User           @relation(fields: [changedByUserId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@index([reportId, createdAt(sort: Desc)], map: "idx_status_history_report")
+  @@map("report_status_history")
+}
+
+model FieldCrew {
+  id              String                                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId    String                                  @map("department_id") @db.Uuid
+  name            String                                  @db.VarChar(100)
+  coveragePolygon Unsupported("geometry(Polygon, 4326)")  @map("coverage_polygon")
+  isActive        Boolean                                 @default(true) @map("is_active")
+  leaderUserId    String                                  @map("leader_user_id") @db.Uuid
+
+  department Department         @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  leaderUser User               @relation(fields: [leaderUserId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  workOrders WorkOrder[]
+  workers    DepartmentWorker[]
+
+  @@index([coveragePolygon], type: Gist, map: "idx_field_crews_coverage_gist")
+  @@map("field_crews")
+}
+
+model DepartmentWorker {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  departmentId String   @map("department_id") @db.Uuid
+  crewId       String?  @map("crew_id") @db.Uuid
+  employeeCode String   @unique @map("employee_code") @db.VarChar(30)
+  firstName    String   @map("first_name") @db.VarChar(100)
+  lastName     String   @map("last_name") @db.VarChar(100)
+  phone        String?  @db.VarChar(20)
+  position     String   @db.VarChar(100)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  department Department @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  crew       FieldCrew? @relation(fields: [crewId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+
+  @@index([departmentId, crewId], map: "idx_department_workers_dept_crew")
+  @@map("department_workers")
+}
+
+model WorkOrder {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderFolio  String   @unique @map("order_folio") @db.VarChar(30)
+  reportId    String   @map("report_id") @db.Uuid
+  crewId      String   @map("crew_id") @db.Uuid
+  assignedAt  DateTime @default(now()) @map("assigned_at") @db.Timestamptz()
+  slaDeadline DateTime @map("sla_deadline") @db.Timestamptz()
+  status      String   @default("ASIGNADA") @db.VarChar(25)
+  fieldNotes  String?  @map("field_notes") @db.Text
+
+  report IncidentReport @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  crew   FieldCrew      @relation(fields: [crewId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@index([crewId, status], map: "idx_work_orders_crew_status")
+  @@index([slaDeadline], map: "idx_work_orders_sla_deadline")
+  @@map("work_orders")
+}
+
+model CitizenUpvote {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId       String   @map("report_id") @db.Uuid
+  deviceOrUserId String   @map("device_or_user_id") @db.VarChar(100)
+  ipAddress      String   @map("ip_address") @db.VarChar(45)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  report IncidentReport @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([reportId, deviceOrUserId], map: "uq_citizen_upvote_once")
+  @@map("citizen_upvotes")
+}
+
+model PhotographicEvidence {
+  id             String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId       String                                @map("report_id") @db.Uuid
+  stage          String                                @db.VarChar(15)
+  imageUrl       String                                @map("image_url") @db.VarChar(500)
+  captureCoords  Unsupported("geometry(Point, 4326)")  @map("capture_coords")
+  verifiedInSitu Boolean                               @default(false) @map("verified_in_situ")
+  capturedAt     DateTime                              @default(now()) @map("captured_at") @db.Timestamptz()
+
+  report IncidentReport @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([captureCoords], type: Gist, map: "idx_photographic_evidences_coords_gist")
+  @@map("photographic_evidences")
+}
+
+model Notification {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  departmentId String?  @map("department_id") @db.Uuid
+  reportId     String?  @map("report_id") @db.Uuid
+  title        String   @db.VarChar(150)
+  message      String   @db.Text
+  type         String   @default("INFO") @db.VarChar(30)
+  isRead       Boolean  @default(false) @map("is_read")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user       User?              @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  department Department?        @relation(fields: [departmentId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  report     IncidentReport?    @relation(fields: [reportId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  reads      NotificationRead[]
+
+  @@index([userId, isRead, createdAt(sort: Desc)], map: "idx_notifications_user_read")
+  @@index([departmentId, isRead, createdAt(sort: Desc)], map: "idx_notifications_dept_read")
+  @@map("notifications")
+}
+
+model NotificationRead {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  readAt         DateTime  @default(now()) @map("read_at") @db.Timestamptz()
+  dismissedAt    DateTime? @map("dismissed_at") @db.Timestamptz()
+
+  notification Notification @relation(fields: [notificationId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+
+  @@unique([notificationId, userId], map: "uq_notification_read_user")
+  @@index([userId, dismissedAt], map: "idx_notification_reads_user_dismissed")
+  @@map("notification_reads")
+}

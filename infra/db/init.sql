@@ -11,6 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "postgis";
 -- =============================================================================
 -- 2. LIMPIEZA PREVIA (Idempotencia para reinicios en entorno local)
 -- =============================================================================
+DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS photographic_evidences CASCADE;
 DROP TABLE IF EXISTS citizen_upvotes CASCADE;
 DROP TABLE IF EXISTS work_orders CASCADE;
@@ -70,6 +71,9 @@ CREATE TABLE users (
     role_id UUID NOT NULL,
     department_id UUID NULL DEFAULT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    active_session_id VARCHAR(255) NULL DEFAULT NULL,
+    reset_token VARCHAR(255) NULL DEFAULT NULL,
+    reset_token_expires_at TIMESTAMPTZ NULL DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_users_role
         FOREIGN KEY (role_id) REFERENCES roles(id)
@@ -246,6 +250,35 @@ CREATE TABLE photographic_evidences (
 
 COMMENT ON TABLE photographic_evidences IS 'Gestiona las imágenes en vivo tomadas durante el reporte inicial (ANTES) y el cierre en campo (DESPUES).';
 
+-- -----------------------------------------------------------------------------
+-- Tabla 11: notifications (Notificaciones In-App para Ciudadanos y Operadores)
+-- -----------------------------------------------------------------------------
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NULL DEFAULT NULL,
+    department_id UUID NULL DEFAULT NULL,
+    report_id UUID NULL DEFAULT NULL,
+    title VARCHAR(150) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(30) NOT NULL DEFAULT 'INFO',
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notifications_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_department
+        FOREIGN KEY (department_id) REFERENCES departments(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_report
+        FOREIGN KEY (report_id) REFERENCES incident_reports(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+COMMENT ON TABLE notifications IS 'Centro de notificaciones internas en tiempo real para ciudadanos, supervisores y cuadrillas.';
+
+CREATE INDEX idx_notifications_user_read ON notifications (user_id, is_read, created_at DESC);
+CREATE INDEX idx_notifications_dept_read ON notifications (department_id, is_read, created_at DESC);
+
 -- =============================================================================
 -- 4. ÍNDICES ESPACIALES (GiST) Y RELACIONALES (B-TREE) PARA RENDIMIENTO < 100ms
 -- =============================================================================
@@ -384,19 +417,20 @@ INSERT INTO report_categories (id, department_id, name, description, priority_we
     ('c3333333-3333-4333-8333-111111111111', 'cccc3333-3333-4333-8333-333333333333', 'Bache Profundo en Vialidad', 'Hundimiento o desprendimiento de carpeta asfáltica en calle o avenida.', 3),
     ('c3333333-3333-4333-8333-222222222222', 'cccc3333-3333-4333-8333-333333333333', 'Hundimiento / Socavón en Pavimento', 'Fractura grave del subsuelo con riesgo de colapso vehicular.', 5);
 
--- 6.4 Insertar Usuarios de Prueba para el Equipo (Password hash de ejemplo para 'Torreon2026!')
+-- 6.4 Insertar Usuarios de Prueba para el Equipo (Password para pruebas locales: 'Torreon2026!')
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone, role_id, department_id) VALUES
     -- Admin General
-    ('d0000000-0000-4000-8000-000000000001', 'admin@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Sergio', 'González Acosta', '8711000001', '11111111-1111-4111-8111-111111111111', NULL),
+    ('d0000000-0000-4000-8000-000000000001', 'admin@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Sergio', 'González Acosta', '8711000001', '11111111-1111-4111-8111-111111111111', NULL),
     -- Supervisores por Dependencia
-    ('d0000000-0000-4000-8000-000000000002', 'supervisor.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Erik Fernando', 'Hernández Ayala', '8711000002', '22222222-2222-4222-8222-222222222222', 'aaaa1111-1111-4111-8111-111111111111'),
-    ('d0000000-0000-4000-8000-000000000003', 'supervisor.ola@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Gema Daniela', 'Castañeda Barraza', '8711000003', '22222222-2222-4222-8222-222222222222', 'bbbb2222-2222-4222-8222-222222222222'),
-    ('d0000000-0000-4000-8000-000000000004', 'supervisor.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'César Fabián', 'Reyes Cortinas', '8711000004', '22222222-2222-4222-8222-222222222222', 'cccc3333-3333-4333-8333-333333333333'),
+    ('d0000000-0000-4000-8000-000000000002', 'supervisor.simas@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Erik Fernando', 'Hernández Ayala', '8711000002', '22222222-2222-4222-8222-222222222222', 'aaaa1111-1111-4111-8111-111111111111'),
+    ('d0000000-0000-4000-8000-000000000003', 'supervisor.ola@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Gema Daniela', 'Castañeda Barraza', '8711000003', '22222222-2222-4222-8222-222222222222', 'bbbb2222-2222-4222-8222-222222222222'),
+    ('d0000000-0000-4000-8000-000000000004', 'supervisor.obras@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'César Fabián', 'Reyes Cortinas', '8711000004', '22222222-2222-4222-8222-222222222222', 'cccc3333-3333-4333-8333-333333333333'),
     -- Jefes de Cuadrilla
-    ('d0000000-0000-4000-8000-000000000005', 'cuadrilla04.simas@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Roberto', 'Méndez Lara', '8711000005', '33333333-3333-4333-8333-333333333333', 'aaaa1111-1111-4111-8111-111111111111'),
-    ('d0000000-0000-4000-8000-000000000006', 'cuadrilla01.obras@torreon.gob.mx', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Arturo', 'Salazar Ríos', '8711000006', '33333333-3333-4333-8333-333333333333', 'cccc3333-3333-4333-8333-333333333333'),
+    ('d0000000-0000-4000-8000-000000000005', 'cuadrilla04.simas@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Roberto', 'Méndez Lara', '8711000005', '33333333-3333-4333-8333-333333333333', 'aaaa1111-1111-4111-8111-111111111111'),
+    ('d0000000-0000-4000-8000-000000000006', 'cuadrilla01.obras@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Arturo', 'Salazar Ríos', '8711000006', '33333333-3333-4333-8333-333333333333', 'cccc3333-3333-4333-8333-333333333333'),
+    ('d0000000-0000-4000-8000-000000000008', 'cuadrilla01.ola@torreon.gob.mx', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Carlos', 'Mendoza Vega', '8711000008', '33333333-3333-4333-8333-333333333333', 'bbbb2222-2222-4222-8222-222222222222'),
     -- Ciudadano de Prueba
-    ('d0000000-0000-4000-8000-000000000007', 'ciudadano@correo.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4oL6.1/2Gy', 'Juan Carlos', 'Treviño Garza', '8711000007', '44444444-4444-4444-8444-444444444444', NULL);
+    ('d0000000-0000-4000-8000-000000000007', 'ciudadano@correo.com', '$2b$10$hctKvcsELqi0k6LbrSjurO6AwV/kZjtS7MiBSlb/fc8XejZ6iv3XW', 'Juan Carlos', 'Treviño Garza', '8711000007', '44444444-4444-4444-8444-444444444444', NULL);
 
 -- 6.5 Insertar Cuadrillas Operativas con Polígono de Cobertura en Torreón Centro/Oriente
 INSERT INTO field_crews (id, department_id, name, coverage_polygon, is_active, leader_user_id) VALUES
@@ -415,6 +449,14 @@ INSERT INTO field_crews (id, department_id, name, coverage_polygon, is_active, l
         ST_GeomFromText('POLYGON((-103.4000 25.5100, -103.3200 25.5100, -103.3200 25.5800, -103.4000 25.5800, -103.4000 25.5100))', 4326),
         TRUE,
         'd0000000-0000-4000-8000-000000000006'
+    ),
+    (
+        'fc000000-0000-4000-8000-000000000003',
+        'bbbb2222-2222-4222-8222-222222222222',
+        'Cuadrilla #01 - Limpieza Centro (La OLA)',
+        ST_GeomFromText('POLYGON((-103.4700 25.5300, -103.4100 25.5300, -103.4100 25.5700, -103.4700 25.5700, -103.4700 25.5300))', 4326),
+        TRUE,
+        'd0000000-0000-4000-8000-000000000008'
     );
 
 -- 6.6 Insertar Reportes Ciudadanos de Prueba en Torreón (Plaza Mayor / Blvd. Independencia)

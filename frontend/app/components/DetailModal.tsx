@@ -1,96 +1,144 @@
 'use client';
 
-import React from 'react';
-import Image from 'next/image';
+import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
-  X,
-  MapPin,
-  Clock,
-  Users,
-  CheckCircle2,
-  Wrench,
-  Truck,
   ArrowRight,
-  ShieldCheck,
+  Ban,
   Calendar,
+  MapPin,
+  Truck,
+  Users,
+  X,
 } from 'lucide-react';
-import { DependencyConfig, Report, ReportStatus } from '../types/dashboard';
+import { apiFetch, ApiError, ApiReport } from '../lib/api';
+
+const InteractiveMap = dynamic(
+  () => import('./InteractiveMap').then((m) => m.InteractiveMap),
+  { ssr: false },
+);
 
 interface DetailModalProps {
-  report: Report | null;
-  dependency: DependencyConfig;
+  report: ApiReport | null;
   isOpen: boolean;
   onClose: () => void;
-  onAdvanceStatus?: (reportId: string, nextStatus: ReportStatus) => void;
+  onUpdated: (updated: ApiReport, message: string) => void;
+  onError: (message: string) => void;
+  onOpenDispatch: (report: ApiReport) => void;
 }
 
 export const DetailModal: React.FC<DetailModalProps> = ({
   report,
-  dependency,
   isOpen,
   onClose,
-  onAdvanceStatus,
+  onUpdated,
+  onError,
+  onOpenDispatch,
 }) => {
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
   if (!isOpen || !report) return null;
 
-  const getNextStatus = (): { status: ReportStatus; label: string } | null => {
-    switch (report.status) {
-      case 'nuevos':
-        return { status: 'asignados', label: 'Asignar cuadrilla' };
-      case 'asignados':
-        return { status: 'en_reparacion', label: 'Iniciar reparación en campo' };
-      case 'en_reparacion':
-        return { status: 'resueltos', label: 'Marcar como resuelto con evidencia' };
-      default:
-        return null;
+  const getNextAction = (): {
+    status: 'EN_PROCESO' | 'RESUELTO';
+    label: string;
+  } | null => {
+    if (report.currentStatus === 'ASIGNADO') {
+      return { status: 'EN_PROCESO', label: 'Pasar a En Reparación' };
+    }
+    if (report.currentStatus === 'EN_PROCESO') {
+      return { status: 'RESUELTO', label: 'Marcar como Resuelto' };
+    }
+    return null;
+  };
+
+  const nextAction = getNextAction();
+
+  const handleAdvance = async (nextStatus: 'EN_PROCESO' | 'RESUELTO') => {
+    setLoading(true);
+    try {
+      const updated = await apiFetch<ApiReport>(`/reports/${report.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      onUpdated(updated, `Folio ${report.folio} actualizado.`);
+      onClose();
+    } catch (err) {
+      onError(
+        err instanceof ApiError ? err.message : 'No se pudo actualizar estado.',
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
-  const nextAction = getNextStatus();
+  const handleReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectReason.trim()) return;
+    setLoading(true);
+    try {
+      const updated = await apiFetch<ApiReport>(`/reports/${report.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: rejectReason.trim() }),
+      });
+      setRejectOpen(false);
+      setRejectReason('');
+      onUpdated(updated, `Folio ${report.folio} rechazado con justificación.`);
+      onClose();
+    } catch (err) {
+      onError(
+        err instanceof ApiError ? err.message : 'No se pudo rechazar reporte.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/55 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/55 backdrop-blur-xs">
       <div
-        className="bg-white rounded-[16px] sm:rounded-[20px] shadow-2xl border border-slate-100 w-full max-w-[760px] max-h-[92vh] overflow-y-auto flex flex-col gap-4 sm:gap-5 p-4 sm:p-6 lg:p-7"
+        className="bg-white rounded-[16px] sm:rounded-[20px] shadow-2xl border border-slate-100 w-full max-w-[780px] max-h-[92vh] overflow-y-auto flex flex-col gap-4 sm:gap-5 p-4 sm:p-6 lg:p-7"
         role="dialog"
         aria-modal="true"
       >
-        {/* Header */}
         <div className="flex items-start justify-between w-full border-b border-slate-100 pb-3">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <span
-                className={`font-bold text-[13px] ${dependency.accentTextClass}`}
+                className="font-bold text-[13px]"
+                style={{ color: report.departmentColor }}
               >
-                {report.folio}
+                {report.folio} · {report.departmentCode}
               </span>
               <span className="text-slate-300">•</span>
               <span className="text-xs uppercase font-bold tracking-wider text-slate-500">
-                {report.status.replace('_', ' ')}
+                {report.currentStatus.replace('_', ' ')}
               </span>
             </div>
             <h2 className="text-[20px] font-bold text-[#0e315a] leading-tight">
-              {report.title}
+              {report.categoryName}
             </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 cursor-pointer"
           >
             <X className="size-5" />
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex flex-col gap-4 text-sm">
-          {/* Location & Report time */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/70">
             <div className="flex items-start gap-2 text-slate-700">
               <MapPin className="size-4 text-slate-500 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold text-xs text-slate-900">Ubicación</p>
-                <p className="text-xs text-slate-600">{report.address}</p>
-                <p className="text-[11px] text-slate-400">Colonia: {report.colonia}</p>
+                <p className="text-xs text-slate-600">
+                  {report.addressReference}
+                </p>
               </div>
             </div>
 
@@ -98,7 +146,12 @@ export const DetailModal: React.FC<DetailModalProps> = ({
               <Calendar className="size-4 text-slate-500 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold text-xs text-slate-900">Registro</p>
-                <p className="text-xs text-slate-600">{report.reportedAt}</p>
+                <p className="text-xs text-slate-600">
+                  {new Date(report.createdAt).toLocaleString('es-MX', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
+                </p>
                 <p className="text-[11px] text-slate-400">
                   {report.elapsedHours} h transcurridas (SLA: {report.slaHours} h)
                 </p>
@@ -106,82 +159,163 @@ export const DetailModal: React.FC<DetailModalProps> = ({
             </div>
           </div>
 
-          {/* Incident Description */}
-          {report.description && (
-            <div className="flex flex-col gap-1">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Descripción reportada
-              </h4>
-              <p className="text-xs text-slate-600 leading-relaxed bg-white border border-slate-200 p-3 rounded-lg">
-                {report.description}
-              </p>
+          <div className="flex flex-col gap-1">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Descripción reportada
+            </h4>
+            <p className="text-xs text-slate-600 leading-relaxed bg-white border border-slate-200 p-3 rounded-lg">
+              {report.description}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <Truck className="size-4 text-slate-500" />
+              <span className="text-xs font-semibold text-slate-800">
+                {report.assignedCrewName ?? 'Pendiente de despacho'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Users className="size-3.5" />
+              <span>{report.upvotesCount} confirmaciones</span>
+            </div>
+          </div>
+
+          <InteractiveMap
+            center={{ lat: report.lat, lng: report.lng }}
+            zoom={15}
+            heightClass="h-[170px]"
+            markers={[
+              {
+                id: report.id,
+                lat: report.lat,
+                lng: report.lng,
+                colorHex: report.departmentColor,
+                selected: true,
+              },
+            ]}
+          />
+
+          {(report.beforeImageUrl || report.afterImageUrl) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {report.beforeImageUrl && (
+                <div className="relative h-44 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={report.beforeImageUrl}
+                    alt="Evidencia antes"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded">
+                    Evidencia inicial (Antes)
+                  </div>
+                </div>
+              )}
+              {report.afterImageUrl && (
+                <div className="relative h-44 rounded-xl overflow-hidden border border-emerald-200 bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={report.afterImageUrl}
+                    alt="Evidencia después"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 bg-emerald-700/85 text-white text-[10px] px-2 py-0.5 rounded">
+                    Evidencia de cierre (Después)
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Assigned Crew or Evidence */}
-          <div className="flex flex-col gap-1">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Cuadrilla Responsable
-            </h4>
-            <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-2">
-                <Truck className="size-4 text-slate-500" />
-                <span className="text-xs font-semibold text-slate-800">
-                  {report.assignedCrew ?? 'Pendiente de despacho'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Users className="size-3.5" />
-                <span>{report.confirmations} vecinos confirmaron</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Evidence photo */}
-          <div className="flex flex-col gap-1">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Evidencia del reporte
-            </h4>
-            <div className="relative h-44 w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-              <Image
-                src={report.evidenceImage ?? '/images/evidencia-ciudadana.png'}
-                alt="Evidencia fotográfica"
-                fill
-                className="object-cover"
+          {/* Formulario de rechazo formal (RF-05) */}
+          {rejectOpen && (
+            <form
+              onSubmit={handleReject}
+              className="bg-[#fdeef0] border border-[#f5c6cb] rounded-xl p-4 flex flex-col gap-2.5"
+            >
+              <label className="text-xs font-bold text-[#be313b]">
+                Motivo formal de rechazo *
+              </label>
+              <textarea
+                required
+                rows={2}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej. Corresponde a instalación domiciliaria interna fuera de medidor..."
+                className="w-full bg-white p-2.5 rounded-lg border border-[#f5c6cb] text-xs outline-none resize-none"
               />
-              <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded backdrop-blur-xs">
-                {report.status === 'resueltos'
-                  ? 'Evidencia de validación de cierre'
-                  : 'Evidencia ciudadana inicial'}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectOpen(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#5e7085] bg-white border border-slate-200 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#be313b] hover:bg-[#9f262f] cursor-pointer"
+                >
+                  Confirmar rechazo
+                </button>
               </div>
-            </div>
-          </div>
+            </form>
+          )}
         </div>
 
-        {/* Footer Actions */}
         <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3 pt-3 border-t border-slate-100">
-          <button
-            onClick={onClose}
-            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-center cursor-pointer"
-          >
-            Cerrar
-          </button>
-
-          {nextAction && onAdvanceStatus && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                onAdvanceStatus(report.id, nextAction.status);
-                onClose();
-              }}
-              className={`w-full sm:w-auto justify-center px-4 py-2.5 sm:py-2 text-xs font-semibold text-white rounded-lg flex items-center gap-1.5 shadow-xs transition-transform active:scale-95 cursor-pointer ${dependency.accentBtnClass}`}
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
             >
-              <span>{nextAction.label}</span>
-              <ArrowRight className="size-3.5" />
+              Cerrar
             </button>
-          )}
+            {report.currentStatus !== 'RESUELTO' &&
+              report.currentStatus !== 'RECHAZADO' &&
+              !rejectOpen && (
+                <button
+                  type="button"
+                  onClick={() => setRejectOpen(true)}
+                  className="px-3.5 py-2 text-xs font-semibold text-[#be313b] border border-[#f5c6cb] bg-[#fdeef0] rounded-lg hover:bg-[#fbdce0] flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Ban className="size-3.5" />
+                  <span>Rechazar</span>
+                </button>
+              )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {report.kanbanStatus === 'nuevos' && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenDispatch(report);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#155ead] hover:bg-[#0f4a8a] rounded-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                <Truck className="size-3.5" />
+                <span>Aceptar y despachar</span>
+              </button>
+            )}
+
+            {nextAction && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void handleAdvance(nextAction.status)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#155ead] hover:bg-[#0f4a8a] rounded-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <span>{nextAction.label}</span>
+                <ArrowRight className="size-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 };
-

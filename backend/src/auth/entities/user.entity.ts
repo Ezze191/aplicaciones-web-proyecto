@@ -51,6 +51,32 @@ export class UserEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
+  @Column({
+    name: 'active_session_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    default: null,
+  })
+  activeSessionId!: string | null;
+
+  @Column({
+    name: 'reset_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    default: null,
+  })
+  resetToken!: string | null;
+
+  @Column({
+    name: 'reset_token_expires_at',
+    type: 'timestamptz',
+    nullable: true,
+    default: null,
+  })
+  resetTokenExpiresAt!: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }
